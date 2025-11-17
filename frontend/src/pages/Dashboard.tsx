@@ -499,7 +499,7 @@ export default function Dashboard() {
                                                     e.stopPropagation();
                                                     handleToggleStar(email.id);
                                                 }}
-                                                className="mt-1 cursor-pointer"
+                                                className="mt-1 cursor-pointer shrink-0"
                                             >
                                                 <Star
                                                     className={`w-4 h-4 ${
