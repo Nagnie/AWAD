@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { type Email } from "@/services/types";
 import mailApi from "@/services/mailApi";
+import { formatDateLong } from "@/lib/utils";
 
 interface EmailDetailProps {
     email: Email | null;
@@ -158,7 +159,7 @@ export function EmailDetail({
                         )}
                         <div className="flex gap-2">
                             <span className="text-muted-foreground w-16">Date:</span>
-                            <span>{fullEmail.timestamp}</span>
+                            <span>{formatDateLong(fullEmail.timestamp)}</span>
                         </div>
                     </div>
 

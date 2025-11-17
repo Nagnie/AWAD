@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { type Email, type Folder } from "@/services/types";
 import mailApi from "@/services/mailApi";
 import { EmailDetail } from "@/components/EmailDetail";
+import { formatDateShort } from "@/lib/utils";
 
 // Icon mapping for mailbox IDs
 const mailboxIcons: Record<string, React.ReactNode> = {
@@ -396,7 +397,7 @@ export default function Dashboard() {
                                                         {email.from.split("<")[0].trim()}
                                                     </span>
                                                     <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                                        {email.timestamp}
+                                                        {formatDateShort(email.timestamp)}
                                                     </span>
                                                 </div>
                                                 <div
