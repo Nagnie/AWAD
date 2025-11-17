@@ -1,3 +1,6 @@
 {
-    "/mailboxes/:id/emails": "/emails?mailboxId=:id"
+    "/mailboxes": "/mailboxes",
+    "/mailboxes/:id/emails": "/emails?mailboxId=:id",
+    "/emails/:id": "/emails/:id",
+    "/emails": "/emails"
 }

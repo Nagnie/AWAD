@@ -8,14 +8,10 @@ import {
     Trash,
     Plus,
     RefreshCw,
-    Reply,
-    ReplyAll,
-    Forward,
-    Download,
-    ChevronLeft,
     Menu,
     X,
     Check,
+    Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,134 +22,135 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { type Email, type Folder } from "@/services/types";
 import mailApi from "@/services/mailApi";
+import { EmailDetail } from "@/components/EmailDetail";
 
-const folders: Folder[] = [
-    { id: "inbox", name: "Inbox", icon: <Mail className="w-4 h-4" />, count: 2 },
-    { id: "starred", name: "Starred", icon: <Star className="w-4 h-4" /> },
-    { id: "sent", name: "Sent", icon: <Send className="w-4 h-4" /> },
-    { id: "drafts", name: "Drafts", icon: <FileText className="w-4 h-4" /> },
-    { id: "archive", name: "Archive", icon: <Archive className="w-4 h-4" /> },
-    { id: "trash", name: "Trash", icon: <Trash className="w-4 h-4" /> },
-];
+// Icon mapping for mailbox IDs
+const mailboxIcons: Record<string, React.ReactNode> = {
+    inbox: <Mail className="w-4 h-4" />,
+    starred: <Star className="w-4 h-4" />,
+    sent: <Send className="w-4 h-4" />,
+    drafts: <FileText className="w-4 h-4" />,
+    archive: <Archive className="w-4 h-4" />,
+    trash: <Trash className="w-4 h-4" />,
+};
 
 export default function Dashboard() {
+    const [folders, setFolders] = useState<Folder[]>([]);
     const [selectedFolder, setSelectedFolder] = useState("inbox");
     const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
     const [emails, setEmails] = useState<Email[]>([]);
-    const [mailboxesState, setMailboxesState] = useState<
-        Array<{ id: string; name: string; unreadCount?: number }>
-    >([]);
     const [selectedEmailIds, setSelectedEmailIds] = useState<Set<number>>(new Set());
     const [showMobileFolders, setShowMobileFolders] = useState(false);
     const [showMobileDetail, setShowMobileDetail] = useState(false);
     const [composeOpen, setComposeOpen] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize] = useState(4);
+    const [totalEmails, setTotalEmails] = useState(0);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
+    const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
+    // Load mailboxes from API
     useEffect(() => {
-        let mounted = true;
-        async function load() {
-            setSelectedEmail(null);
-            setSelectedEmailIds(new Set());
+        const loadMailboxes = async () => {
             try {
-                if (selectedFolder === "starred") {
-                    const res = await mailApi.getAllEmails({ page: 1, pageSize: 200 });
-                    if (!mounted) return;
-                    setEmails(res.items.filter((e) => e.isStarred));
-                    // refresh mailbox counts
-                    try {
-                        const boxes = await mailApi.getMailboxes();
-                        if (!mounted) return;
-                        setMailboxesState(boxes);
-                    } catch (err) {
-                        console.error("Failed to refresh mailboxes", err);
-                    }
-                } else {
-                    const res = await mailApi.getMailboxEmails(selectedFolder, {
-                        page: 1,
-                        pageSize: 200,
-                    });
-                    if (!mounted) return;
-                    setEmails(res.items);
-                    // refresh mailbox counts
-                    try {
-                        const boxes = await mailApi.getMailboxes();
-                        if (!mounted) return;
-                        setMailboxesState(boxes);
-                    } catch (err) {
-                        console.error("Failed to refresh mailboxes", err);
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to load emails", err);
+                const mailboxes = await mailApi.getMailboxes();
+                const foldersData: Folder[] = mailboxes.map((mailbox) => ({
+                    id: mailbox.id,
+                    name: mailbox.name,
+                    icon: mailboxIcons[mailbox.id] || <Mail className="w-4 h-4" />,
+                    count: mailbox.unreadCount || 0,
+                }));
+                setFolders(foldersData);
+            } catch (error) {
+                console.error("Error loading mailboxes:", error);
+                // Fallback to default folders if API fails
+                const defaultFolders: Folder[] = [
+                    { id: "inbox", name: "Inbox", icon: mailboxIcons["inbox"], count: 0 },
+                    { id: "starred", name: "Starred", icon: mailboxIcons["starred"] },
+                    { id: "sent", name: "Sent", icon: mailboxIcons["sent"] },
+                    { id: "drafts", name: "Drafts", icon: mailboxIcons["drafts"] },
+                    { id: "archive", name: "Archive", icon: mailboxIcons["archive"] },
+                    { id: "trash", name: "Trash", icon: mailboxIcons["trash"] },
+                ];
+                setFolders(defaultFolders);
             }
-        }
-        load();
-        return () => {
-            mounted = false;
         };
-    }, [selectedFolder]);
 
-    // initial load of mailboxes (counts)
-    useEffect(() => {
-        let mounted = true;
-        mailApi
-            .getMailboxes()
-            .then((boxes) => {
-                if (!mounted) return;
-                setMailboxesState(boxes);
-            })
-            .catch((err) => console.error("Failed to load mailboxes", err));
-        return () => {
-            mounted = false;
-        };
+        loadMailboxes();
     }, []);
 
-    const handleEmailClick = async (email: Email) => {
-        try {
-            const detail = await mailApi.getEmailById(email.id);
-            setSelectedEmail(detail);
-            setShowMobileDetail(true);
-            if (!email.isRead) {
-                // optimistic update
-                setEmails((prev) =>
-                    prev.map((e) => (e.id === email.id ? { ...e, isRead: true } : e))
-                );
-                // adjust mailbox unread count locally
-                setMailboxesState((prev) =>
-                    prev.map((m) =>
-                        m.id === selectedFolder
-                            ? { ...m, unreadCount: Math.max(0, (m.unreadCount || 0) - 1) }
-                            : m
-                    )
-                );
-                // NOTE: intentionally not persisting read state to API to avoid reloads
+    // Reset current page when folder changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedFolder]);
+
+    // Load emails from API
+    useEffect(() => {
+        const loadEmails = async () => {
+            setIsLoading(true);
+            try {
+                const result = await mailApi.getMailboxEmails(selectedFolder, {
+                    page: currentPage,
+                    pageSize: pageSize,
+                    q: searchQuery,
+                });
+
+                // If API returned more items than pageSize, it means pagination wasn't applied on server
+                // So we need to apply it client-side
+                let items = result.items;
+                let total = result.total;
+
+                if (items.length > pageSize) {
+                    // Server didn't paginate, so paginate client-side
+                    total = items.length;
+                    const start = (currentPage - 1) * pageSize;
+                    items = items.slice(start, start + pageSize);
+                }
+
+                setEmails(items);
+                setTotalEmails(total);
+            } catch (err) {
+                console.error("Error loading emails:", err);
+                setEmails([]);
+                setTotalEmails(0);
+            } finally {
+                setIsLoading(false);
             }
-        } catch (err) {
-            console.error("Failed to load email detail", err);
-            // fallback to using the list item
-            setSelectedEmail(email);
-            setShowMobileDetail(true);
-        }
+        };
+
+        loadEmails();
+        setSelectedEmail(null);
+        setSelectedEmailIds(new Set());
+    }, [selectedFolder, currentPage, pageSize, searchQuery]);
+
+    const handleEmailClick = (email: Email) => {
+        setShowMobileDetail(true);
+        setIsLoadingDetail(true);
+        // Fetch email detail from API
+        const fetchEmailDetail = async () => {
+            try {
+                const emailDetail = await mailApi.getEmailById(email.id);
+                setSelectedEmail(emailDetail);
+                // Mark as read if it's unread
+                if (!emailDetail.isRead) {
+                    setEmails(emails.map((e) => (e.id === email.id ? { ...e, isRead: true } : e)));
+                }
+            } catch (err) {
+                console.error("Error fetching email detail:", err);
+                // Fallback to the email from list
+                setSelectedEmail(email);
+            } finally {
+                setIsLoadingDetail(false);
+            }
+        };
+        fetchEmailDetail();
     };
 
-    const handleToggleStar = async (emailId: number) => {
-        const current = emails.find((e) => e.id === emailId) || selectedEmail;
-        const newVal = !(current?.isStarred ?? false);
-        // optimistic update
-        setEmails((prev) => prev.map((e) => (e.id === emailId ? { ...e, isStarred: newVal } : e)));
+    const handleToggleStar = (emailId: number) => {
+        setEmails(emails.map((e) => (e.id === emailId ? { ...e, isStarred: !e.isStarred } : e)));
         if (selectedEmail?.id === emailId) {
-            setSelectedEmail({ ...selectedEmail, isStarred: newVal });
-        }
-        try {
-            await mailApi.patchEmail(emailId, { isStarred: newVal });
-        } catch (err) {
-            console.error("Failed to toggle star", err);
-            // revert on failure
-            setEmails((prev) =>
-                prev.map((e) => (e.id === emailId ? { ...e, isStarred: !newVal } : e))
-            );
-            if (selectedEmail?.id === emailId) {
-                setSelectedEmail({ ...selectedEmail, isStarred: !newVal });
-            }
+            setSelectedEmail({ ...selectedEmail, isStarred: !selectedEmail.isStarred });
         }
     };
 
@@ -176,42 +173,13 @@ export default function Dashboard() {
     };
 
     const handleMarkAsRead = () => {
-        // optimistic update
-        const affected = emails.filter((e) => selectedEmailIds.has(e.id) && !e.isRead);
-        if (affected.length > 0) {
-            setEmails((prev) =>
-                prev.map((e) => (selectedEmailIds.has(e.id) ? { ...e, isRead: true } : e))
-            );
-            // decrement unread count for current mailbox
-            setMailboxesState((prev) =>
-                prev.map((m) =>
-                    m.id === selectedFolder
-                        ? { ...m, unreadCount: Math.max(0, (m.unreadCount || 0) - affected.length) }
-                        : m
-                )
-            );
-            // NOTE: intentionally not persisting read state to API to avoid reloads
-        }
+        setEmails(emails.map((e) => (selectedEmailIds.has(e.id) ? { ...e, isRead: true } : e)));
     };
 
     const handleMarkAsUnread = () => {
-        const affected = emails.filter((e) => selectedEmailIds.has(e.id) && e.isRead);
-        if (affected.length > 0) {
-            setEmails((prev) =>
-                prev.map((e) => (selectedEmailIds.has(e.id) ? { ...e, isRead: false } : e))
-            );
-            if (selectedEmail) {
-                setSelectedEmail({ ...selectedEmail, isRead: false });
-            }
-            // increment unread count for current mailbox
-            setMailboxesState((prev) =>
-                prev.map((m) =>
-                    m.id === selectedFolder
-                        ? { ...m, unreadCount: (m.unreadCount || 0) + affected.length }
-                        : m
-                )
-            );
-            // NOTE: intentionally not persisting read state to API to avoid reloads
+        setEmails(emails.map((e) => (selectedEmailIds.has(e.id) ? { ...e, isRead: false } : e)));
+        if (selectedEmail) {
+            setSelectedEmail({ ...selectedEmail, isRead: false });
         }
     };
 
@@ -223,64 +191,6 @@ export default function Dashboard() {
         }
     };
 
-    const handleDownloadAttachment = (attachment: { name: string; size?: string }) => {
-        try {
-            const content = `Mock file content for ${attachment.name}\nSize: ${
-                attachment.size || ""
-            }\nGenerated: ${new Date().toISOString()}`;
-            const blob = new Blob([content], { type: "text/plain" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = attachment.name;
-            document.body.appendChild(a);
-            a.click();
-            URL.revokeObjectURL(url);
-            a.remove();
-        } catch (err) {
-            console.error("Download failed", err);
-        }
-    };
-
-    const sanitizeHtml = (html: string) => {
-        // basic sanitization for mock content: remove script tags and inline event handlers
-        return html
-            .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-            .replace(/ on\w+="[^"]*"/gi, "")
-            .replace(/ on\w+='[^']*'/gi, "");
-    };
-
-    function formatTimestamp(ts?: string, mode: "list" | "detail" = "list") {
-        if (!ts) return "";
-        const d = new Date(ts);
-        if (isNaN(d.getTime())) return ts;
-
-        const now = new Date();
-        const sameDay =
-            d.getFullYear() === now.getFullYear() &&
-            d.getMonth() === now.getMonth() &&
-            d.getDate() === now.getDate();
-
-        if (mode === "list") {
-            // show time if today, else show day/month + time so time is always visible
-            const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-            if (sameDay) {
-                return time;
-            }
-            const shortDate = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-            return `${shortDate} · ${time}`;
-        }
-
-        // detail: full date + time
-        return d.toLocaleString(undefined, {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    }
-
     const handleKeyDown = (e: React.KeyboardEvent, email: Email) => {
         if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -289,7 +199,7 @@ export default function Dashboard() {
     };
 
     return (
-        <div className="h-full flex flex-col">
+        <div className="h-[calc(100vh-64px)] flex flex-col">
             {/* Mobile Header */}
             <div className="lg:hidden flex items-center justify-between p-4 border-b">
                 <Button
@@ -348,17 +258,11 @@ export default function Dashboard() {
                                     >
                                         {folder.icon}
                                         <span className="flex-1">{folder.name}</span>
-                                        {(() => {
-                                            const mb = mailboxesState.find(
-                                                (m) => m.id === folder.id
-                                            );
-                                            const count = mb?.unreadCount ?? folder.count;
-                                            return count ? (
-                                                <Badge variant="secondary" className="ml-auto">
-                                                    {count}
-                                                </Badge>
-                                            ) : null;
-                                        })()}
+                                        {folder.count ? (
+                                            <Badge variant="secondary" className="ml-auto">
+                                                {folder.count}
+                                            </Badge>
+                                        ) : null}
                                     </Button>
                                 ))}
                             </nav>
@@ -370,10 +274,22 @@ export default function Dashboard() {
                 <div
                     className={`
                     ${showMobileDetail ? "hidden lg:flex" : "flex"}
-                    flex-col w-full lg:w-2/5 border-r
+                    flex-col w-full lg:w-2/5 border-r overflow-hidden
                     `}
                 >
-                    <div className="p-4 border-b space-y-3">
+                    <div className="p-4 border-b space-y-3 shrink-0">
+                        {/* Search Input */}
+                        <Input
+                            type="text"
+                            placeholder="Search emails..."
+                            value={searchQuery}
+                            onChange={(e) => {
+                                setSearchQuery(e.target.value);
+                                setCurrentPage(1); // Reset to first page on search
+                            }}
+                            className="w-full"
+                        />
+
                         <div className="flex items-center gap-2 flex-wrap">
                             <Button
                                 onClick={() => setComposeOpen(true)}
@@ -387,9 +303,12 @@ export default function Dashboard() {
                                 variant="outline"
                                 className="cursor-pointer"
                                 size="sm"
-                                onClick={() => {}}
+                                onClick={() => setCurrentPage(1)}
+                                disabled={isLoading}
                             >
-                                <RefreshCw className="w-4 h-4" />
+                                <RefreshCw
+                                    className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`}
+                                />
                             </Button>
                             <Button
                                 variant="outline"
@@ -476,8 +395,8 @@ export default function Dashboard() {
                                                     >
                                                         {email.from.split("<")[0].trim()}
                                                     </span>
-                                                    <span className="text-xs text-muted-foreground whitespace-nowrap w-24 text-right ml-2 shrink-0">
-                                                        {formatTimestamp(email.timestamp, "list")}
+                                                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                                        {email.timestamp}
                                                     </span>
                                                 </div>
                                                 <div
@@ -489,7 +408,7 @@ export default function Dashboard() {
                                                 >
                                                     {email.subject}
                                                 </div>
-                                                <div className="text-sm text-muted-foreground truncate">
+                                                <div className="text-sm text-muted-foreground">
                                                     {email.preview}
                                                 </div>
                                             </div>
@@ -499,7 +418,7 @@ export default function Dashboard() {
                                                     e.stopPropagation();
                                                     handleToggleStar(email.id);
                                                 }}
-                                                className="mt-1 cursor-pointer shrink-0"
+                                                className="mt-1 cursor-pointer"
                                             >
                                                 <Star
                                                     className={`w-4 h-4 ${
@@ -515,185 +434,112 @@ export default function Dashboard() {
                             )}
                         </div>
                     </ScrollArea>
+
+                    {/* Pagination */}
+                    {totalEmails > pageSize && (
+                        <div className="p-4 border-t flex items-center justify-between bg-sidebar shrink-0">
+                            <div className="text-sm text-muted-foreground">
+                                Showing {Math.min((currentPage - 1) * pageSize + 1, totalEmails)}-
+                                {Math.min(currentPage * pageSize, totalEmails)} of {totalEmails}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                                    disabled={currentPage === 1 || isLoading}
+                                    className="cursor-pointer"
+                                >
+                                    Previous
+                                </Button>
+                                <div className="flex items-center gap-1">
+                                    {Array.from({ length: Math.ceil(totalEmails / pageSize) }).map(
+                                        (_, idx) => {
+                                            const page = idx + 1;
+                                            if (
+                                                page === 1 ||
+                                                page === Math.ceil(totalEmails / pageSize) ||
+                                                (page >= currentPage - 1 && page <= currentPage + 1)
+                                            ) {
+                                                return (
+                                                    <Button
+                                                        key={page}
+                                                        variant={
+                                                            page === currentPage
+                                                                ? "default"
+                                                                : "outline"
+                                                        }
+                                                        size="sm"
+                                                        onClick={() => setCurrentPage(page)}
+                                                        disabled={isLoading}
+                                                        className="cursor-pointer"
+                                                    >
+                                                        {page}
+                                                    </Button>
+                                                );
+                                            } else if (
+                                                page === currentPage - 2 ||
+                                                page === currentPage + 2
+                                            ) {
+                                                return (
+                                                    <span key={page} className="px-2">
+                                                        ...
+                                                    </span>
+                                                );
+                                            }
+                                            return null;
+                                        }
+                                    )}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(currentPage + 1)}
+                                    disabled={
+                                        currentPage >= Math.ceil(totalEmails / pageSize) ||
+                                        isLoading
+                                    }
+                                    className="cursor-pointer"
+                                >
+                                    Next
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Column 3: Email Detail */}
                 <div
                     className={`
                     ${showMobileDetail ? "flex" : "hidden lg:flex"}
-                    flex-col w-full lg:w-2/5
+                    flex-col w-full lg:w-2/5 overflow-hidden
                     `}
                 >
-                    {selectedEmail ? (
-                        <>
-                            <div className="pt-6 pb-4 px-8">
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="lg:hidden"
-                                        onClick={() => setShowMobileDetail(false)}
-                                    >
-                                        <ChevronLeft className="w-5 h-5" />
-                                    </Button>
-                                    <div className="flex gap-3 flex-wrap flex-1">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="cursor-pointer"
-                                        >
-                                            <Reply className="w-4 h-4 mr-1 text-mail-foreground" />
-                                            Reply
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="cursor-pointer"
-                                        >
-                                            <ReplyAll className="w-4 h-4 mr-1 text-mail-foreground" />
-                                            Reply All
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="cursor-pointer"
-                                        >
-                                            <Forward className="w-4 h-4 mr-1 text-mail-foreground" />
-                                            Forward
-                                        </Button>
-                                    </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="cursor-pointer"
-                                        onClick={() => handleToggleStar(selectedEmail.id)}
-                                    >
-                                        <Star
-                                            className={`w-5 h-5 ${
-                                                selectedEmail.isStarred
-                                                    ? "fill-yellow-400 text-yellow-400"
-                                                    : ""
-                                            }`}
-                                        />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="cursor-pointer"
-                                        onClick={handleMarkAsUnread}
-                                    >
-                                        <Mail className="w-5 h-5" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="cursor-pointer"
-                                        onClick={handleDelete}
-                                    >
-                                        <Trash className="w-5 h-5 text-red-500" />
-                                    </Button>
-                                </div>
+                    {isLoadingDetail ? (
+                        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+                            <div className="text-center">
+                                <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin opacity-50" />
+                                <p className="text-lg">Loading email...</p>
                             </div>
-
-                            <ScrollArea className="flex-1">
-                                <div className="py-4 px-8">
-                                    <h1 className="text-2xl font-bold mb-4">
-                                        {selectedEmail.subject}
-                                    </h1>
-
-                                    <div className="space-y-2 mb-6 text-sm border-b pb-4">
-                                        <div className="flex gap-2">
-                                            <span className="text-muted-foreground w-16">
-                                                From:
-                                            </span>
-                                            <span>{selectedEmail.from}</span>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <span className="text-muted-foreground w-16">To:</span>
-                                            <span>{selectedEmail.to}</span>
-                                        </div>
-                                        {selectedEmail.cc && (
-                                            <div className="flex gap-2">
-                                                <span className="text-muted-foreground w-16">
-                                                    CC:
-                                                </span>
-                                                <span>{selectedEmail.cc}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex gap-2">
-                                            <span className="text-muted-foreground w-16">
-                                                Date:
-                                            </span>
-                                            <span>
-                                                {formatTimestamp(selectedEmail.timestamp, "detail")}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {selectedEmail.bodyHtml ? (
-                                        <div
-                                            className="prose max-w-none mb-6"
-                                            dangerouslySetInnerHTML={{
-                                                __html: sanitizeHtml(selectedEmail.bodyHtml),
-                                            }}
-                                        />
-                                    ) : (
-                                        <div className="prose max-w-none mb-6">
-                                            <p className="whitespace-pre-wrap">
-                                                {selectedEmail.body}
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    {selectedEmail.attachments &&
-                                        selectedEmail.attachments.length > 0 && (
-                                            <div className="border-t pt-4">
-                                                <h3 className="font-semibold mb-3">
-                                                    Attachments ({selectedEmail.attachments.length})
-                                                </h3>
-                                                <div className="space-y-2">
-                                                    {selectedEmail.attachments.map(
-                                                        (attachment, idx) => (
-                                                            <div
-                                                                key={idx}
-                                                                className="flex items-center justify-between p-3 bg-secondary border rounded-lg"
-                                                            >
-                                                                <div className="flex items-center gap-3">
-                                                                    <FileText className="w-5 h-5 text-muted-foreground" />
-                                                                    <div>
-                                                                        <div className="font-medium">
-                                                                            {attachment.name}
-                                                                        </div>
-                                                                        <div className="text-sm text-muted-foreground">
-                                                                            {attachment.size}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    className="cursor-pointer"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleDownloadAttachment(
-                                                                            attachment as {
-                                                                                name: string;
-                                                                                size?: string;
-                                                                            }
-                                                                        );
-                                                                    }}
-                                                                >
-                                                                    <Download className="w-4 h-4" />
-                                                                </Button>
-                                                            </div>
-                                                        )
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                </div>
-                            </ScrollArea>
-                        </>
+                        </div>
+                    ) : selectedEmail ? (
+                        <EmailDetail
+                            email={selectedEmail}
+                            onBack={() => setShowMobileDetail(false)}
+                            onToggleStar={handleToggleStar}
+                            onMarkAsUnread={(email) => {
+                                setEmails(
+                                    emails.map((e) =>
+                                        e.id === email.id ? { ...e, isRead: false } : e
+                                    )
+                                );
+                                setSelectedEmail({ ...email, isRead: false });
+                            }}
+                            onDelete={(email) => {
+                                setEmails(emails.filter((e) => e.id !== email.id));
+                                setSelectedEmail(null);
+                            }}
+                        />
                     ) : (
                         <div className="flex-1 flex items-center justify-center text-muted-foreground">
                             <div className="text-center">

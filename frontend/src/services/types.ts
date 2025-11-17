@@ -13,6 +13,12 @@ export interface Email {
     attachments?: { name: string; size: string }[];
 }
 
+export interface Mailbox {
+    id: string;
+    name: string;
+    unreadCount?: number;
+}
+
 export interface Folder {
     id: string;
     name: string;

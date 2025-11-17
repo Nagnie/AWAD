@@ -21,7 +21,8 @@ type RawEmail = {
 };
 
 const api = axios.create({
-    baseURL: "/api",
+    baseURL: "http://localhost:4000",
+    timeout: 5000,
 });
 
 function htmlToText(html: string | undefined) {
@@ -63,34 +64,80 @@ function mapRawToEmail(r: RawEmail): Email {
 export async function getMailboxes(): Promise<
     Array<{ id: string; name: string; unreadCount?: number }>
 > {
-    const res = await api.get<Array<{ id: string; name: string; unreadCount?: number }>>(
-        "/mailboxes"
-    );
-    return res.data;
+    try {
+        const res = await api.get<Array<{ id: string; name: string; unreadCount?: number }>>(
+            "/mailboxes"
+        );
+        return res.data;
+    } catch (error) {
+        const err = error as { message: string };
+        console.error("Error fetching mailboxes:", err.message);
+        throw new Error(`Failed to fetch mailboxes: ${err.message}`);
+    }
 }
 
 export async function getMailboxEmails(
     mailboxId: string,
     opts?: { page?: number; pageSize?: number; q?: string }
 ): Promise<{ items: Email[]; total: number }> {
-    const params: Record<string, string | number | undefined> = {};
-    const page = opts?.page ?? 1;
-    const pageSize = opts?.pageSize ?? 20;
-    params._page = page;
-    params._limit = pageSize;
-    if (opts?.q) params.q = opts.q;
+    try {
+        const params: Record<string, string | number | undefined> = {};
+        const page = Math.max(opts?.page ?? 1, 1);
+        const pageSize = Math.min(Math.max(opts?.pageSize ?? 20, 1), 100); // Cap at 100
+        params._page = page;
+        params._limit = pageSize;
+        if (opts?.q && opts.q.trim()) {
+            params.q = opts.q.trim();
+        }
 
-    const res = await api.get<RawEmail[]>(`/mailboxes/${mailboxId}/emails`, { params });
-    const raw = res.data as RawEmail[];
-    const items: Email[] = raw.map(mapRawToEmail);
-    const total = parseInt(res.headers["x-total-count"] || String(items.length), 10);
-    return { items, total };
+        // For "starred" mailbox, fetch all emails and filter by isStarred
+        if (mailboxId === "starred") {
+            const res = await api.get<RawEmail[]>(`/emails`, { params: { q: opts?.q } });
+            const raw = Array.isArray(res.data) ? res.data : [];
+            let items: Email[] = raw.map(mapRawToEmail);
+
+            // Filter by starred
+            items = items.filter((e) => e.isStarred);
+
+            // Apply pagination on filtered results
+            const total = items.length;
+            const start = (page - 1) * pageSize;
+            items = items.slice(start, start + pageSize);
+
+            return { items, total };
+        }
+
+        // For regular mailboxes, use mailboxId filter
+        const res = await api.get<RawEmail[]>(`/mailboxes/${mailboxId}/emails`, { params });
+        const raw = Array.isArray(res.data) ? res.data : [];
+        const items: Email[] = raw.map(mapRawToEmail);
+
+        // Parse total count from headers or calculate from response
+        let total = parseInt(res.headers["x-total-count"] || String(items.length), 10);
+
+        // If response is all items and less than pageSize, that's the total
+        if (items.length < pageSize) {
+            total = (page - 1) * pageSize + items.length;
+        }
+
+        return { items, total };
+    } catch (error) {
+        const err = error as { message: string };
+        console.error(`Error fetching emails from mailbox ${mailboxId}:`, err.message);
+        throw new Error(`Failed to fetch mailbox emails: ${err.message}`);
+    }
 }
 
 export async function getEmailById(id: number): Promise<Email> {
-    const res = await api.get<RawEmail>(`/emails/${id}`);
-    const r = res.data as RawEmail;
-    return mapRawToEmail(r);
+    try {
+        const res = await api.get<RawEmail>(`/emails/${id}`);
+        const r = res.data as RawEmail;
+        return mapRawToEmail(r);
+    } catch (error) {
+        const err = error as { message: string };
+        console.error(`Error fetching email ${id}:`, err.message);
+        throw new Error(`Failed to fetch email: ${err.message}`);
+    }
 }
 
 export async function getAllEmails(opts?: {
@@ -98,24 +145,26 @@ export async function getAllEmails(opts?: {
     pageSize?: number;
     q?: string;
 }): Promise<{ items: Email[]; total: number }> {
-    const params: Record<string, string | number | undefined> = {};
-    const page = opts?.page ?? 1;
-    const pageSize = opts?.pageSize ?? 100;
-    params._page = page;
-    params._limit = pageSize;
-    if (opts?.q) params.q = opts.q;
+    try {
+        const params: Record<string, string | number | undefined> = {};
+        const page = Math.max(opts?.page ?? 1, 1);
+        const pageSize = Math.min(Math.max(opts?.pageSize ?? 100, 1), 100); // Cap at 100
+        params._page = page;
+        params._limit = pageSize;
+        if (opts?.q && opts.q.trim()) {
+            params.q = opts.q.trim();
+        }
 
-    const res = await api.get<RawEmail[]>(`/emails`, { params });
-    const raw = res.data as RawEmail[];
-    const items: Email[] = raw.map(mapRawToEmail);
-    const total = parseInt(res.headers["x-total-count"] || String(items.length), 10);
-    return { items, total };
-}
-
-export async function patchEmail(id: number, patch: Partial<RawEmail>): Promise<Email> {
-    const res = await api.patch<RawEmail>(`/emails/${id}`, patch);
-    const r = res.data as RawEmail;
-    return mapRawToEmail(r);
+        const res = await api.get<RawEmail[]>(`/emails`, { params });
+        const raw = Array.isArray(res.data) ? res.data : [];
+        const items: Email[] = raw.map(mapRawToEmail);
+        const total = parseInt(res.headers["x-total-count"] || String(items.length), 10);
+        return { items, total };
+    } catch (error) {
+        const err = error as { message: string };
+        console.error("Error fetching all emails:", err.message);
+        throw new Error(`Failed to fetch emails: ${err.message}`);
+    }
 }
 
 export default {
@@ -123,5 +172,23 @@ export default {
     getMailboxEmails,
     getEmailById,
     getAllEmails,
-    patchEmail,
+    updateEmail,
 };
+
+/**
+ * Update email status (read/unread, starred)
+ * PATCH /emails/:id
+ */
+export async function updateEmail(
+    id: number,
+    updates: { isRead?: boolean; isStarred?: boolean }
+): Promise<Email> {
+    try {
+        const res = await api.patch<RawEmail>(`/emails/${id}`, updates);
+        return mapRawToEmail(res.data);
+    } catch (error) {
+        const err = error as { message: string };
+        console.error(`Error updating email ${id}:`, err.message);
+        throw new Error(`Failed to update email: ${err.message}`);
+    }
+}
