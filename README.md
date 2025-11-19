@@ -1,7 +1,7 @@
 # React Authentication (Email+Password + Google Sign-In) + Email Dashboard Mockup
 
 ## Live Demo
-
+**Frontend (Vercel)**: [https://awad-navy.vercel.app](https://awad-navy.vercel.app)
 
 ## Setup Instructions
 
