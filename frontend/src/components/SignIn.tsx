@@ -53,7 +53,7 @@ export default function SignIn() {
 
     const handleGoogleLogin = useGoogleLogin({
         flow: "auth-code",
-        scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.labels",
+        scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.labels https://mail.google.com/",
         // prompt: 'consent',
 
         onSuccess: async (codeResponse) => {
