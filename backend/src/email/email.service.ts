@@ -4,6 +4,7 @@ import { parseEmailDetail, hasAttachments } from '../utils/email.util';
 import { gmail_v1 } from 'googleapis';
 import { EmailDetailDto } from 'src/email/dto/email-detail.dto';
 import { ModifyEmailDto } from 'src/email/dto/modify-email.dto';
+import { DeleteBatchEmailDto } from 'src/email/dto/delete-batch-email.dto';
 
 @Injectable()
 export class EmailService {
@@ -107,6 +108,24 @@ export class EmailService {
     return this.modifyEmail(userId, emailId, {
       removeLabelIds: ['INBOX'],
     });
+  }
+
+  async deleteEmail(userId: number, emailId: string): Promise<void> {
+    await this.gmailService.deleteMessage(userId, emailId);
+  }
+
+  async batchDeleteEmails(
+    userId: number,
+    deleteBatchEmailDto: DeleteBatchEmailDto,
+  ): Promise<void> {
+    if (deleteBatchEmailDto.ids.length === 0) {
+      throw new BadRequestException('No email IDs provided for deletion');
+    }
+
+    await this.gmailService.batchDeleteMessages(
+      userId,
+      deleteBatchEmailDto.ids,
+    );
   }
 
   hasAttachments(payload: gmail_v1.Schema$MessagePart) {

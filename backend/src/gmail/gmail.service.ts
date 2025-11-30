@@ -145,4 +145,23 @@ export class GmailService {
     });
     return res.data;
   }
+
+  async deleteMessage(userId: number, messageId: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    await gmail.users.messages.delete({
+      userId: 'me',
+      id: messageId,
+    });
+  }
+
+  async batchDeleteMessages(userId: number, messageIds: string[]) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const res = await gmail.users.messages.batchDelete({
+      userId: 'me',
+      requestBody: {
+        ids: messageIds,
+      },
+    });
+    return res.data;
+  }
 }

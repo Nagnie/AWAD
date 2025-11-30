@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -11,16 +12,35 @@ import { AtGuard } from '../auth/guards/at.guard';
 import { EmailService } from './email.service';
 import { ApiSecurity } from '@nestjs/swagger';
 import { ModifyEmailDto } from 'src/email/dto/modify-email.dto';
+import { DeleteBatchEmailDto } from 'src/email/dto/delete-batch-email.dto';
 
 @Controller('emails')
 @UseGuards(AtGuard)
 export class EmailController {
   constructor(private readonly emailService: EmailService) {}
 
+  @Delete('batch-delete')
+  @ApiSecurity('jwt')
+  async batchDeleteEmails(
+    @Req() req,
+    @Body() deleteBatchEmailDto: DeleteBatchEmailDto,
+  ) {
+    return this.emailService.batchDeleteEmails(
+      req.user.sub,
+      deleteBatchEmailDto,
+    );
+  }
+
   @Get(':id')
   @ApiSecurity('jwt')
   async getEmailDetail(@Req() req, @Param('id') id: string) {
     return this.emailService.getEmailDetail(req.user.sub, id);
+  }
+
+  @Delete(':id')
+  @ApiSecurity('jwt')
+  async deleteEmail(@Req() req, @Param('id') emailId: string) {
+    return this.emailService.deleteEmail(req.user.sub, emailId);
   }
 
   @Post(':id/modify')
