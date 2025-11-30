@@ -3,6 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate } from "react-router-dom";
 import { loginSchema, type LoginFormData } from "../schemas/auth";
 import { useAppDispatch, useAppSelector } from "../hooks/redux";
+import { useAuthListener } from "@/hooks/useAuthListener";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,13 +18,16 @@ import {
 import { AlertCircleIcon, Eye, EyeOff, LockIcon, Mail, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
 import { loginUser, googleLogin } from "@/store/authSlice";
-import { GoogleLogin, useGoogleLogin, type CredentialResponse } from "@react-oauth/google";
+import { useGoogleLogin } from "@react-oauth/google";
 
 export default function SignIn() {
     const dispatch = useAppDispatch();
     const navigate = useNavigate();
     const { isLoading, error, accessToken } = useAppSelector((state) => state.auth);
     const [showPassword, setShowPassword] = useState(false);
+
+    // Setup auth listeners
+    useAuthListener();
 
     // Redirect if already logged in
     useEffect(() => {

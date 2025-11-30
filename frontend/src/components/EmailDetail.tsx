@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { type Email } from "@/services/types";
-import mailApi from "@/services/mailApi";
+import { type Email } from "@/services/mail";
+import { mailApi } from "@/services/mail";
 import { formatDateLong } from "@/lib/utils";
 
 interface EmailDetailProps {

@@ -1,3 +1,7 @@
+/**
+ * Mail API types
+ */
+
 export interface Email {
     id: number;
     from: string;
@@ -24,4 +28,10 @@ export interface Folder {
     name: string;
     icon: React.ReactNode;
     count?: number;
+}
+
+export interface EmailsResponse {
+    items: Email[];
+    total: number;
+    hasMore: boolean;
 }
