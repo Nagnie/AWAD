@@ -17,7 +17,7 @@ import {
 import { AlertCircleIcon, Eye, EyeOff, LockIcon, Mail, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
 import { loginUser, googleLogin } from "@/store/authSlice";
-import { GoogleLogin, useGoogleLogin, type CredentialResponse } from '@react-oauth/google';
+import { GoogleLogin, useGoogleLogin, type CredentialResponse } from "@react-oauth/google";
 
 export default function SignIn() {
     const dispatch = useAppDispatch();
@@ -28,7 +28,7 @@ export default function SignIn() {
     // Redirect if already logged in
     useEffect(() => {
         if (accessToken) {
-            navigate('/dashboard', { replace: true });
+            navigate("/dashboard", { replace: true });
         }
     }, [accessToken, navigate]);
 
@@ -44,33 +44,32 @@ export default function SignIn() {
         try {
             // await thunk and throw error
             await dispatch(loginUser(data)).unwrap();
-            
-            navigate('/dashboard', { replace: true }); 
-            
+
+            navigate("/dashboard", { replace: true });
         } catch (error) {
-            console.error('Login failed:', error);
+            console.error("Login failed:", error);
         }
     };
 
     const handleGoogleLogin = useGoogleLogin({
-        flow: 'auth-code',
-        scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
-        // prompt: 'consent', 
+        flow: "auth-code",
+        scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.labels",
+        // prompt: 'consent',
 
         onSuccess: async (codeResponse) => {
             try {
                 console.log("Authorization Code:", codeResponse.code);
-                
+
                 await dispatch(googleLogin(codeResponse.code)).unwrap();
-                
-                navigate('/dashboard', { replace: true });
+
+                navigate("/dashboard", { replace: true });
             } catch (error) {
-                console.error('Google login exchange failed:', error);
+                console.error("Google login exchange failed:", error);
             }
         },
         onError: (errorResponse) => {
-            console.error('Google login failed:', errorResponse);
-        }
+            console.error("Google login failed:", errorResponse);
+        },
     });
 
     return (
