@@ -9,5 +9,6 @@ import { UserModule } from 'src/user/user.module';
   ],
   controllers: [GmailController],
   providers: [GmailService],
+  exports: [GmailService],
 })
 export class GmailModule {}

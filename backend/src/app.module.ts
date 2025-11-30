@@ -12,6 +12,7 @@ import googleOauthConfig from './config/google-oauth.config';
 import { AtGuard } from './auth/guards/at.guard';
 import { APP_GUARD } from '@nestjs/core/constants';
 import { RtGuard } from './auth/guards/rt.guard';
+import { MailboxModule } from './mailbox/mailbox.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { RtGuard } from './auth/guards/rt.guard';
     UserModule,
     AuthModule,
     GmailModule,
+    MailboxModule,
   ],
   controllers: [AppController],
   providers: [

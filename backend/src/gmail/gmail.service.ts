@@ -38,7 +38,41 @@ export class GmailService {
 
   async listLabels(userId: number) {
     const gmail = await this.getAuthenticatedGmailClient(userId);
-    const res = await gmail.users.labels.list({ userId: 'me' });
+    const res = await gmail.users.labels.list({ 
+      userId: 'me',
+    });
+    return res.data;
+  }
+
+  async getLabel(userId: number, labelId: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const res = await gmail.users.labels.get({
+      userId: 'me',
+      id: labelId,
+    });
+    return res.data;
+  }
+
+  async getEmailsByLabel(userId: number, labelId: string, query?: string, pageToken?: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const res = await gmail.users.messages.list({
+      userId: 'me',
+      labelIds: [labelId],
+      q: query,
+      maxResults: 20,
+      pageToken: pageToken,
+    });
+    return res.data;
+  }
+
+  async getEmailMetadata(userId: number, messageId: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const res = await gmail.users.messages.get({
+      userId: 'me',
+      id: messageId,
+      format: 'metadata',
+      metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+    });
     return res.data;
   }
 
