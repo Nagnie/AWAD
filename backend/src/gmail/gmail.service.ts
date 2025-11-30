@@ -164,4 +164,14 @@ export class GmailService {
     });
     return res.data;
   }
+
+  async getAttachment(userId: number, messageId: string, attachmentId: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const res = await gmail.users.messages.attachments.get({
+      userId: 'me',
+      messageId: messageId,
+      id: attachmentId,
+    });
+    return res.data;
+  }
 }

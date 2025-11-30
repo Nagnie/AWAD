@@ -6,6 +6,7 @@ import { GmailModule } from '../gmail/gmail.module';
 @Module({
   imports: [GmailModule],
   controllers: [EmailController],
-  providers: [EmailService]
+  providers: [EmailService],
+  exports: [EmailService],
 })
 export class EmailModule {}

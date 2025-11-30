@@ -6,20 +6,21 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  StreamableFile,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { ApiResponse } from 'src/common/response.dto';
 
 @Injectable()
-export class TransformInterceptor<T> 
-  implements NestInterceptor<T, ApiResponse<T>> {
-
+export class TransformInterceptor<T> implements NestInterceptor<
+  T,
+  ApiResponse<T> | StreamableFile
+> {
   intercept(
     context: ExecutionContext,
     next: CallHandler,
-  ): Observable<ApiResponse<T>> {
-
+  ): Observable<ApiResponse<T> | StreamableFile> {
     const httpCtx = context.switchToHttp();
     const response = httpCtx.getResponse();
     const request = httpCtx.getRequest();
@@ -28,15 +29,22 @@ export class TransformInterceptor<T>
     const message = statusCode === 201 ? 'Created successfully' : 'OK';
 
     return next.handle().pipe(
-      map(data => ({
-        status: 'success',
-        message: message,
-        data: data,
-        metadata: {
-          timestamp: new Date().toISOString(),
-          path: request.url,
-        },
-      })),
+      map((data) => {
+        // Skip transformation for StreamableFile (file downloads)
+        if (data instanceof StreamableFile) {
+          return data;
+        }
+
+        return {
+          status: 'success',
+          message: message,
+          data: data,
+          metadata: {
+            timestamp: new Date().toISOString(),
+            path: request.url,
+          },
+        };
+      }),
     );
   }
 }

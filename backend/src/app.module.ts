@@ -14,6 +14,7 @@ import { APP_GUARD } from '@nestjs/core/constants';
 import { RtGuard } from './auth/guards/rt.guard';
 import { MailboxModule } from './mailbox/mailbox.module';
 import { EmailModule } from './email/email.module';
+import { AttachmentModule } from './attachment/attachment.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { EmailModule } from './email/email.module';
     GmailModule,
     MailboxModule,
     EmailModule,
+    AttachmentModule,
   ],
   controllers: [AppController],
   providers: [
