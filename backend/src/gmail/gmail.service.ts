@@ -1,6 +1,6 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
-import { google } from 'googleapis';
+import { gmail_v1, google } from 'googleapis';
 import googleOauthConfig from 'src/config/google-oauth.config';
 import { UserService } from 'src/user/user.service';
 import { decrypt } from 'src/utils/encrypt.util';
@@ -108,6 +108,40 @@ export class GmailService {
       requestBody: {
         raw: rawContent,
       },
+    });
+    return res.data;
+  }
+
+  async modifyMessage(
+    userId: number,
+    messageId: string,
+    requestBody: gmail_v1.Schema$ModifyMessageRequest,
+  ) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const res = await gmail.users.messages.modify({
+      userId: 'me',
+      id: messageId,
+      requestBody,
+    });
+
+    return res.data;
+  }
+
+  async moveMessageToTrash(userId: number, messageId: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const res = await gmail.users.messages.trash({
+      userId: 'me',
+      id: messageId,
+    });
+
+    return res.data;
+  }
+
+  async untrashMessage(userId: number, messageId: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const res = await gmail.users.messages.untrash({
+      userId: 'me',
+      id: messageId,
     });
     return res.data;
   }
