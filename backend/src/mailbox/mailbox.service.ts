@@ -1,49 +1,79 @@
 import { Injectable } from '@nestjs/common';
-import { GmailService } from 'src/gmail/gmail.service';
+import { GmailService } from '../gmail/gmail.service';
+import { getHeaderValue } from 'src/utils/email.util';
+import { LabelDto } from './dto/label.dto';
+import { EmailListResponseDto } from './dto/email-list-response.dto';
+import { EmailSummaryDto } from './dto/email-summary.dto';
 
 @Injectable()
 export class MailboxService {
-    constructor(
-        private readonly gmailService: GmailService
-    ) {}
+  constructor(private readonly gmailService: GmailService) {}
 
-    async getLabels(
-        userId: number
-    ) {
+  async getLabels(userId: number): Promise<LabelDto[]> {
+    const labels = await this.gmailService.listLabels(userId);
 
-        const labels = await this.gmailService.listLabels(userId);
+    const call = labels.labels?.map(async (label) => {
+      const fullLabel = await this.gmailService.getLabel(userId, label.id!);
+      return fullLabel as LabelDto;
+    });
 
-        const call = labels.labels?.map(async (label) => {
-            const fullLabel = await this.gmailService.getLabel(userId, label.id!);
-            return fullLabel;
-        });
+    const detailedLabels = await Promise.all(call || []);
 
-        const detailedLabels = await Promise.all(call || []);
+    return detailedLabels;
+  }
 
-        return detailedLabels;
-    }
+  async getLabel(userId: number, labelId: string): Promise<LabelDto> {
+    return this.gmailService.getLabel(userId, labelId) as Promise<LabelDto>;
+  }
 
-    async getLabel(
-        userId: number,
-        labelId: string
-    ) {
-        return this.gmailService.getLabel(userId, labelId);
-    }
+  async getEmailsByLabel(
+    userId: number,
+    labelId: string,
+    query?: string,
+    pageToken?: string,
+  ): Promise<EmailListResponseDto> {
+    const emails = await this.gmailService.getEmailsByLabel(
+      userId,
+      labelId,
+      query,
+      pageToken,
+    );
 
-    async getEmailsByLabel(userId: number, labelId: string, query?: string, pageToken?: string) {
-        const emails = await this.gmailService.getEmailsByLabel(userId, labelId, query, pageToken);
+    const call = emails.messages?.map(async (message) => {
+      const fullMessage = await this.gmailService.getEmailMetadata(
+        userId,
+        message.id!,
+      );
 
-        const call = emails.messages?.map(async (message) => {
-            const fullMessage = await this.gmailService.getEmailMetadata(userId, message.id!);
-            return fullMessage;
-        });
+      const { payload, ...rest } = fullMessage;
 
-        const detailedEmails = await Promise.all(call || []);
+      const rawHeaders = payload?.headers || [];
+      const headers = {
+        subject: getHeaderValue(rawHeaders, 'Subject') || '',
+        from: getHeaderValue(rawHeaders, 'From') || '',
+        to: getHeaderValue(rawHeaders, 'To') || '',
+        date: getHeaderValue(rawHeaders, 'Date') || '',
+      };
 
-        return {
-            nextPageToken: emails.nextPageToken,
-            resultSizeEstimate: emails.resultSizeEstimate,
-            emails: detailedEmails
-        }
-    }
+      const isUnread = fullMessage.labelIds?.includes('UNREAD') || false;
+      const isStarred = fullMessage.labelIds?.includes('STARRED') || false;
+      const isImportant = fullMessage.labelIds?.includes('IMPORTANT') || false;
+
+      return {
+        ...rest,
+        header: headers,
+        isUnread,
+        isStarred,
+        isImportant,
+      } as EmailSummaryDto;
+    });
+
+    const detailedEmails = await Promise.all(call || []);
+
+    return {
+      nextPageToken: emails.nextPageToken || undefined,
+      resultSizeEstimate: emails.resultSizeEstimate || 0,
+      emails: detailedEmails,
+    };
+  }
 }

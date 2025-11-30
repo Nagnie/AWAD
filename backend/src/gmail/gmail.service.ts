@@ -7,12 +7,11 @@ import { decrypt } from 'src/utils/encrypt.util';
 
 @Injectable()
 export class GmailService {
-    constructor(
-        @Inject(googleOauthConfig.KEY) private googleOauthConfiguration: ConfigType<typeof googleOauthConfig>,
-        private userService: UserService
-    ) {
-
-    }
+  constructor(
+    @Inject(googleOauthConfig.KEY)
+    private googleOauthConfiguration: ConfigType<typeof googleOauthConfig>,
+    private userService: UserService,
+  ) {}
 
   private async getAuthenticatedGmailClient(userId: number) {
     const user = await this.userService.findOne(userId);
@@ -25,7 +24,7 @@ export class GmailService {
 
     const oauth2Client = new google.auth.OAuth2(
       this.googleOauthConfiguration.clientId,
-      this.googleOauthConfiguration.clientSecret
+      this.googleOauthConfiguration.clientSecret,
     );
 
     oauth2Client.setCredentials({
@@ -35,10 +34,9 @@ export class GmailService {
     return google.gmail({ version: 'v1', auth: oauth2Client });
   }
 
-
   async listLabels(userId: number) {
     const gmail = await this.getAuthenticatedGmailClient(userId);
-    const res = await gmail.users.labels.list({ 
+    const res = await gmail.users.labels.list({
       userId: 'me',
     });
     return res.data;
@@ -53,7 +51,12 @@ export class GmailService {
     return res.data;
   }
 
-  async getEmailsByLabel(userId: number, labelId: string, query?: string, pageToken?: string) {
+  async getEmailsByLabel(
+    userId: number,
+    labelId: string,
+    query?: string,
+    pageToken?: string,
+  ) {
     const gmail = await this.getAuthenticatedGmailClient(userId);
     const res = await gmail.users.messages.list({
       userId: 'me',

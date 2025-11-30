@@ -1,6 +1,6 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { AtGuard } from '../auth/guards/at.guard';
-import { MailboxService } from 'src/mailbox/mailbox.service';
+import { MailboxService } from './mailbox.service';
 import { ApiSecurity } from '@nestjs/swagger';
 
 @Controller('mailboxes')

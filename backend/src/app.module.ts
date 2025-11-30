@@ -13,6 +13,7 @@ import { AtGuard } from './auth/guards/at.guard';
 import { APP_GUARD } from '@nestjs/core/constants';
 import { RtGuard } from './auth/guards/rt.guard';
 import { MailboxModule } from './mailbox/mailbox.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { MailboxModule } from './mailbox/mailbox.module';
     AuthModule,
     GmailModule,
     MailboxModule,
+    EmailModule,
   ],
   controllers: [AppController],
   providers: [
