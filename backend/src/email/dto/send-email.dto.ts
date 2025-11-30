@@ -1,0 +1,95 @@
+import { IsEmail, IsString, IsOptional, IsArray } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class EmailRecipientDto {
+  @ApiProperty({ example: 'recipient@example.com' })
+  @IsEmail()
+  email: string;
+
+  @ApiPropertyOptional({ example: 'John Doe' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
+export class SendEmailDto {
+  @ApiProperty({
+    description: 'Recipients (To)',
+    type: [String],
+    example: ['user1@example.com', 'user2@example.com'],
+  })
+  @IsArray()
+  @IsEmail({}, { each: true })
+  to: string[];
+
+  @ApiPropertyOptional({
+    description: 'CC recipients',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEmail({}, { each: true })
+  cc?: string[];
+
+  @ApiPropertyOptional({
+    description: 'BCC recipients',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEmail({}, { each: true })
+  bcc?: string[];
+
+  @ApiProperty({ example: 'Meeting tomorrow' })
+  @IsString()
+  subject: string;
+
+  @ApiPropertyOptional({
+    description: 'Plain text body',
+    example: "Hello, let's meet tomorrow at 2pm.",
+  })
+  @IsOptional()
+  @IsString()
+  textBody?: string;
+
+  @ApiPropertyOptional({
+    description: 'HTML body',
+    example: "<div>Hello, let's meet tomorrow at 2pm.</div>",
+  })
+  @IsOptional()
+  @IsString()
+  htmlBody?: string;
+
+  @ApiPropertyOptional({
+    description: 'Thread ID to send as reply',
+    example: '18d8f2a3b4c5d6e7',
+  })
+  @IsOptional()
+  @IsString()
+  threadId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Array of attachment data (base64)',
+    type: [Object],
+  })
+  @IsOptional()
+  @IsArray()
+  attachments?: AttachmentDto[];
+}
+
+export class AttachmentDto {
+  @ApiProperty({ example: 'document.pdf' })
+  @IsString()
+  filename: string;
+
+  @ApiProperty({ example: 'application/pdf' })
+  @IsString()
+  mimeType: string;
+
+  @ApiProperty({
+    description: 'Base64 encoded file data',
+    example: 'JVBERi0xLjQKJeLjz9MK...',
+  })
+  @IsString()
+  data: string; // base64
+}

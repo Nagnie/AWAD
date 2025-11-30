@@ -174,4 +174,18 @@ export class GmailService {
     });
     return res.data;
   }
+
+  async sendEmail(userId: number, rawContent: string, threadId?: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+    const requestBody: gmail_v1.Params$Resource$Users$Messages$Send = {
+      userId: 'me',
+      requestBody: {
+        raw: rawContent,
+        threadId: threadId,
+      },
+    };
+
+    const res = await gmail.users.messages.send(requestBody);
+    return res.data;
+  }
 }

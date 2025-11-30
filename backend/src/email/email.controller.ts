@@ -10,9 +10,10 @@ import {
 } from '@nestjs/common';
 import { AtGuard } from '../auth/guards/at.guard';
 import { EmailService } from './email.service';
-import { ApiSecurity } from '@nestjs/swagger';
+import { ApiOperation, ApiSecurity } from '@nestjs/swagger';
 import { ModifyEmailDto } from 'src/email/dto/modify-email.dto';
 import { DeleteBatchEmailDto } from 'src/email/dto/delete-batch-email.dto';
+import { SendEmailDto } from 'src/email/dto/send-email.dto';
 
 @Controller('emails')
 @UseGuards(AtGuard)
@@ -99,5 +100,15 @@ export class EmailController {
   @ApiSecurity('jwt')
   async untrashEmail(@Req() req, @Param('id') emailId: string) {
     return this.emailService.untrashEmail(req.user.sub, emailId);
+  }
+
+  @Post('send')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Send new email',
+    description: 'Compose and send a new email with optional attachments',
+  })
+  async sendEmail(@Req() req, @Body() sendDto: SendEmailDto) {
+    return this.emailService.sendEmail(req.user.sub, sendDto);
   }
 }
