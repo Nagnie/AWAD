@@ -15,6 +15,7 @@ import { RtGuard } from './auth/guards/rt.guard';
 import { MailboxModule } from './mailbox/mailbox.module';
 import { EmailModule } from './email/email.module';
 import { AttachmentModule } from './attachment/attachment.module';
+import { ThreadModule } from './thread/thread.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { AttachmentModule } from './attachment/attachment.module';
     MailboxModule,
     EmailModule,
     AttachmentModule,
+    ThreadModule,
   ],
   controllers: [AppController],
   providers: [

@@ -203,4 +203,16 @@ export class GmailService {
     const res = await gmail.users.messages.send(requestBody);
     return res.data;
   }
+
+  async getThread(userId: number, threadId: string) {
+    const gmail = await this.getAuthenticatedGmailClient(userId);
+
+    const res = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'full',
+    });
+
+    return res.data;
+  }
 }

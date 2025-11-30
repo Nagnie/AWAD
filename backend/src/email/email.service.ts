@@ -7,7 +7,20 @@ import { ModifyEmailDto } from './dto/modify-email.dto';
 import { DeleteBatchEmailDto } from './dto/delete-batch-email.dto';
 import { AttachmentDto, SendEmailDto } from './dto/send-email.dto';
 import { ReplyEmailDto, ReplyType } from './dto/reply-email.dto';
-import { BatchModifyEmailDto } from 'src/email/dto/batch-modify-email.dto';
+import { BatchModifyEmailDto } from './dto/batch-modify-email.dto';
+import {
+  parseEmailAddresses,
+  removeDuplicateEmails,
+  filterAttachmentsWithData,
+} from '../utils/email-parser.util';
+import {
+  buildQuotedText,
+  buildQuotedHtml,
+  buildReplySubject,
+  buildForwardSubject,
+} from '../utils/email-formatter.util';
+import { encodeBase64Url } from '../utils/email-encoder.util';
+import { buildRFC822Message } from '../utils/rfc822-builder.util';
 
 @Injectable()
 export class EmailService {
@@ -152,9 +165,15 @@ export class EmailService {
       throw new BadRequestException('At least one recipient is required');
     }
 
-    const rawMessage = this.buildRFC822Message(sendEmailDto);
+    // Validate at least one body content
+    if (!sendEmailDto.textBody && !sendEmailDto.htmlBody) {
+      throw new BadRequestException(
+        'At least one of textBody or htmlBody is required',
+      );
+    }
 
-    const encodedMessage = this.encodeBase64Url(rawMessage);
+    const rawMessage = buildRFC822Message(sendEmailDto);
+    const encodedMessage = encodeBase64Url(rawMessage);
 
     const sentMessage = await this.gmailService.sendEmail(
       userId,
@@ -169,9 +188,6 @@ export class EmailService {
 
   async replyToEmail(userId: number, emailId: string, replyDto: ReplyEmailDto) {
     const originalMessage = await this.getEmailDetail(userId, emailId);
-    if (!originalMessage) {
-      throw new BadRequestException('Original email not found');
-    }
 
     // Build reply message
     const sendDto = this.buildReplyMessage(originalMessage, replyDto);
@@ -186,14 +202,14 @@ export class EmailService {
   ) {
     const headers = originalMessage.headers;
 
-    const originalFrom = headers.from;
-    const originalTo = headers.to;
-    const originalCc = headers.cc;
-    const originalSubject = headers.subject || '';
-    const originalDate = headers.date || '';
+    const originalFrom = headers?.from || '';
+    const originalTo = headers?.to || '';
+    const originalCc = headers?.cc || '';
+    const originalSubject = headers?.subject || '';
+    const originalDate = headers?.date || '';
 
     const {
-      body: { htmlBody, textBody, attachments: originalAttachments },
+      body: { htmlBody, textBody, attachments: originalAttachments = [] },
     } = originalMessage;
 
     let to: string[] = [];
@@ -207,6 +223,11 @@ export class EmailService {
       case ReplyType.REPLY:
         // Reply to sender only
         to = this.parseEmailAddresses(originalFrom);
+
+        // Add additional CC from replyDto
+        if (replyDto.cc) {
+          cc = replyDto.cc;
+        }
 
         // Add BCC from replyDto
         bcc = replyDto.bcc || [];
@@ -237,15 +258,21 @@ export class EmailService {
         bcc = replyDto.bcc || [];
 
         // Remove duplicates
-        to = [...new Set(to)];
-        cc = [...new Set(cc)];
+        to = removeDuplicateEmails(to);
+        cc = removeDuplicateEmails(cc);
+        bcc = removeDuplicateEmails(bcc);
 
         subject = this.buildReplySubject(originalSubject);
         break;
 
       case ReplyType.FORWARD:
         // Forward requires recipients from replyDto
-        to = replyDto.to!;
+        if (!replyDto.to || replyDto.to.length === 0) {
+          throw new BadRequestException(
+            'Forward requires at least one recipient',
+          );
+        }
+        to = replyDto.to;
         cc = replyDto.cc || [];
         bcc = replyDto.bcc || [];
 
@@ -254,17 +281,13 @@ export class EmailService {
     }
 
     // Build quoted content
-    const quotedTextBody = this.buildQuotedText(
-      textBody || htmlBody || '',
-      originalFrom,
-      originalDate,
-    );
-
-    const quotedHtmlBody = this.buildQuotedHtml(
-      htmlBody || textBody || '',
-      originalFrom,
-      originalDate,
-    );
+    // Use consistent priority: prefer textBody for text, htmlBody for html
+    const quotedTextBody = textBody
+      ? buildQuotedText(textBody, originalFrom, originalDate)
+      : '';
+    const quotedHtmlBody = htmlBody
+      ? buildQuotedHtml(htmlBody, originalFrom, originalDate)
+      : '';
 
     // Combine reply body with quoted content
     const finalTextBody = replyDto.textBody
@@ -272,18 +295,17 @@ export class EmailService {
       : quotedTextBody;
 
     const finalHtmlBody = replyDto.htmlBody
-      ? `<div>${replyDto.htmlBody}</div><br>${quotedHtmlBody}`
+      ? `<div>${replyDto.htmlBody}</div><br/>${quotedHtmlBody}`
       : quotedHtmlBody;
 
     // Handle attachments
     const allAttachments: AttachmentDto[] = [];
 
-    if (replyDto.includeOriginalAttachments) {
-      const attachments = originalAttachments.map((att) => ({
-        filename: att.filename,
-        mimeType: att.mimeType,
-        data: att.inlineData!,
-      }));
+    if (
+      replyDto.includeOriginalAttachments &&
+      originalAttachments?.length > 0
+    ) {
+      const attachments = filterAttachmentsWithData(originalAttachments);
       allAttachments.push(...attachments);
     }
 
@@ -305,205 +327,15 @@ export class EmailService {
   }
 
   private parseEmailAddresses(headerValue: string): string[] {
-    if (!headerValue) return [];
-
-    // Simple regex to extract emails
-    const emailRegex = /[\w.-]+@[\w.-]+\.\w+/g;
-    const matches = headerValue.match(emailRegex);
-
-    return matches || [];
+    return parseEmailAddresses(headerValue);
   }
 
   private buildReplySubject(originalSubject: string): string {
-    if (!originalSubject) return 'Re: ';
-
-    const subject = originalSubject.trim();
-
-    // Check if already has Re: prefix
-    if (/^re:/i.test(subject)) {
-      return subject;
-    }
-
-    return `Re: ${subject}`;
+    return buildReplySubject(originalSubject);
   }
 
   private buildForwardSubject(originalSubject: string): string {
-    const subject = originalSubject?.trim() || '';
-    return `Fwd: ${subject}`;
-  }
-
-  private buildQuotedText(
-    originalBody: string,
-    from: string,
-    date: string,
-  ): string {
-    const lines = ['', `On ${date}, ${from} wrote:`, ''];
-
-    // Add > prefix to each line
-    const quotedLines = originalBody.split('\n').map((line) => `> ${line}`);
-    lines.push(...quotedLines);
-
-    return lines.join('\n');
-  }
-
-  private buildQuotedHtml(
-    originalBody: string,
-    from: string,
-    date: string,
-  ): string {
-    return `
-      <div class="gmail_quote">
-        <div class="gmail_attr">
-          On ${this.escapeHtml(date)}, ${this.escapeHtml(from)} wrote:
-        </div>
-        <blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px #ccc solid;padding-left:1ex">
-          ${originalBody}
-        </blockquote>
-      </div>
-    `;
-  }
-
-  private escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  private buildRFC822Message(sendDto: SendEmailDto): string {
-    const boundary = this.generateBoundary();
-    const lines: string[] = [];
-
-    // Headers
-    lines.push(`To: ${sendDto.to.join(', ')}`);
-
-    if (sendDto.cc && sendDto.cc.length > 0) {
-      lines.push(`Cc: ${sendDto.cc.join(', ')}`);
-    }
-
-    if (sendDto.bcc && sendDto.bcc.length > 0) {
-      lines.push(`Bcc: ${sendDto.bcc.join(', ')}`);
-    }
-
-    lines.push(`Subject: ${sendDto.subject}`);
-    lines.push('MIME-Version: 1.0');
-
-    // Check if multipart (has attachments or both text and HTML)
-    const hasAttachments =
-      sendDto.attachments && sendDto.attachments.length > 0;
-    const hasBothBodies = sendDto.textBody && sendDto.htmlBody;
-
-    if (hasAttachments) {
-      // Multipart mixed (for attachments)
-      lines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-      lines.push('');
-
-      // Body part
-      if (hasBothBodies) {
-        lines.push(`--${boundary}`);
-        lines.push(
-          `Content-Type: multipart/alternative; boundary="${boundary}_alt"`,
-        );
-        lines.push('');
-
-        // Text version
-        lines.push(`--${boundary}_alt`);
-        lines.push('Content-Type: text/plain; charset="UTF-8"');
-        lines.push('');
-        lines.push(sendDto.textBody!);
-        lines.push('');
-
-        // HTML version
-        lines.push(`--${boundary}_alt`);
-        lines.push('Content-Type: text/html; charset="UTF-8"');
-        lines.push('');
-        lines.push(sendDto.htmlBody!);
-        lines.push('');
-        lines.push(`--${boundary}_alt--`);
-      } else {
-        // Single body type
-        lines.push(`--${boundary}`);
-        if (sendDto.htmlBody) {
-          lines.push('Content-Type: text/html; charset="UTF-8"');
-          lines.push('');
-          lines.push(sendDto.htmlBody);
-        } else {
-          lines.push('Content-Type: text/plain; charset="UTF-8"');
-          lines.push('');
-          lines.push(sendDto.textBody!);
-        }
-        lines.push('');
-      }
-
-      // Attachments
-      for (const attachment of sendDto.attachments!) {
-        lines.push(`--${boundary}`);
-        lines.push(
-          `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
-        );
-        lines.push(
-          `Content-Disposition: attachment; filename="${attachment.filename}"`,
-        );
-        lines.push('Content-Transfer-Encoding: base64');
-        lines.push('');
-        lines.push(attachment.data);
-        lines.push('');
-      }
-
-      lines.push(`--${boundary}--`);
-    } else if (hasBothBodies) {
-      // Multipart alternative (text + HTML, no attachments)
-      lines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
-      lines.push('');
-
-      // Text version
-      lines.push(`--${boundary}`);
-      lines.push('Content-Type: text/plain; charset="UTF-8"');
-      lines.push('');
-      lines.push(sendDto.textBody!);
-      lines.push('');
-
-      // HTML version
-      lines.push(`--${boundary}`);
-      lines.push('Content-Type: text/html; charset="UTF-8"');
-      lines.push('');
-      lines.push(sendDto.htmlBody!);
-      lines.push('');
-
-      lines.push(`--${boundary}--`);
-    } else {
-      // Simple message (single body type, no attachments)
-      if (sendDto.htmlBody) {
-        lines.push('Content-Type: text/html; charset="UTF-8"');
-        lines.push('');
-        lines.push(sendDto.htmlBody);
-      } else {
-        lines.push('Content-Type: text/plain; charset="UTF-8"');
-        lines.push('');
-        lines.push(sendDto.textBody!);
-      }
-    }
-
-    return lines.join('\r\n');
-  }
-
-  private generateBoundary(): string {
-    return `----=_Part_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-  }
-
-  private encodeBase64Url(data: string): string {
-    // Convert to Buffer
-    const buffer = Buffer.from(data, 'utf-8');
-
-    // Encode to base64
-    let base64 = buffer.toString('base64');
-
-    // Convert to base64url (URL-safe)
-    base64 = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-
-    return base64;
+    return buildForwardSubject(originalSubject);
   }
 
   hasAttachments(payload: gmail_v1.Schema$MessagePart) {
