@@ -21,7 +21,7 @@ import {
     useMarkAsReadMutation,
     useMarkAsUnreadMutation,
     useDeleteEmailMutation,
-} from "@/services/email";
+} from "@/services/tanstack-query";
 
 interface EmailDetailProps {
     message: ThreadMessage | null;
@@ -29,30 +29,20 @@ interface EmailDetailProps {
     onRefreshEmails?: () => void;
 }
 
-export function EmailDetail({ message, onBack, onRefreshEmails }: EmailDetailProps) {
+export function EmailDetail({ message, onBack }: EmailDetailProps) {
     // Email action mutations
-    const [starEmail] = useStarEmailMutation();
-    const [unstarEmail] = useUnstarEmailMutation();
-    const [markAsRead] = useMarkAsReadMutation();
-    const [markAsUnread] = useMarkAsUnreadMutation();
-    const [deleteEmail] = useDeleteEmailMutation();
+    const { mutate: starEmail } = useStarEmailMutation();
+    const { mutate: unstarEmail } = useUnstarEmailMutation();
+    const { mutate: markAsRead } = useMarkAsReadMutation();
+    const { mutate: markAsUnread } = useMarkAsUnreadMutation();
+    const { mutate: deleteEmail } = useDeleteEmailMutation();
 
     // Auto mark as read when email is opened if it's unread
     useEffect(() => {
-        console.log(">>> isUnread:", message?.isUnread);
         if (message && message.isUnread) {
-            markAsRead(message.id)
-                .unwrap()
-                .then(() => {
-                    if (onRefreshEmails) {
-                        onRefreshEmails();
-                    }
-                })
-                .catch((error) => {
-                    console.error("Error marking email as read:", error);
-                });
+            markAsRead(message.id);
         }
-    }, [message?.id, message?.isUnread, markAsRead, onRefreshEmails]);
+    }, [message, markAsRead]);
 
     const displayMessage = message;
 
@@ -84,61 +74,25 @@ export function EmailDetail({ message, onBack, onRefreshEmails }: EmailDetailPro
         if (!message) return;
 
         if (displayMessage.isStarred) {
-            unstarEmail(message.id)
-                .unwrap()
-                .then(() => {
-                    if (onRefreshEmails) {
-                        onRefreshEmails();
-                    }
-                })
-                .catch((error) => {
-                    console.error("Error unstarring email:", error);
-                });
+            unstarEmail(message.id);
         } else {
-            starEmail(message.id)
-                .unwrap()
-                .then(() => {
-                    if (onRefreshEmails) {
-                        onRefreshEmails();
-                    }
-                })
-                .catch((error) => {
-                    console.error("Error starring email:", error);
-                });
+            starEmail(message.id);
         }
     };
 
     const handleMarkAsUnread = () => {
         if (!message) return;
 
-        markAsUnread(message.id)
-            .unwrap()
-            .then(() => {
-                if (onRefreshEmails) {
-                    onRefreshEmails();
-                }
-            })
-            .catch((error) => {
-                console.error("Error marking email as unread:", error);
-            });
+        markAsUnread(message.id);
     };
 
     const handleDelete = () => {
         if (!message) return;
 
-        deleteEmail(message.id)
-            .unwrap()
-            .then(() => {
-                if (onRefreshEmails) {
-                    onRefreshEmails();
-                }
-                if (onBack) {
-                    onBack();
-                }
-            })
-            .catch((error) => {
-                console.error("Error deleting email:", error);
-            });
+        deleteEmail(message.id);
+        if (onBack) {
+            onBack();
+        }
     };
 
     return (

@@ -22,21 +22,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { type Folder } from "@/services/mail";
-import { useMailboxes } from "@/hooks/useMailboxes";
-import { useMailboxEmailsInfinite } from "@/hooks/useMailboxEmailsInfinite";
 import { EmailDetail } from "@/components/EmailDetail";
 import { formatDateShort, formatMailboxName } from "@/lib/utils";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import type { EmailMessage } from "@/services/mailboxes";
-import { useGetThreadDetailQuery } from "@/services/mailboxes/api";
 import type { ThreadMessage } from "@/services/mailboxes/types";
+import {
+    useMailboxesTanstack,
+    useMailboxEmailsInfiniteTanstack,
+    useThreadDetailTanstack,
+} from "@/hooks/tanstack-hooks";
 import {
     useBatchDeleteEmailsMutation,
     useStarEmailMutation,
     useUnstarEmailMutation,
     useMarkAsReadMutation,
     useMarkAsUnreadMutation,
-} from "@/services/email";
+} from "@/services/tanstack-query";
 
 // Icon mapping for mailbox IDs
 const mailboxIcons: Record<string, React.ReactNode> = {
@@ -49,21 +51,15 @@ const mailboxIcons: Record<string, React.ReactNode> = {
 };
 
 export default function Dashboard() {
-    const {
-        mailboxes,
-        isLoading: isLoadingMailboxes,
-        error: mailboxesError,
-        refetch: refetchMailboxes,
-    } = useMailboxes();
+    const { mailboxes, isLoading: isLoadingMailboxes } = useMailboxesTanstack();
 
     // Email operation mutations
-    const [batchDeleteEmails] = useBatchDeleteEmailsMutation();
-    const [starEmail] = useStarEmailMutation();
-    const [unstarEmail] = useUnstarEmailMutation();
-    const [markAsRead] = useMarkAsReadMutation();
-    const [markAsUnread] = useMarkAsUnreadMutation();
+    const { mutate: batchDeleteEmails } = useBatchDeleteEmailsMutation();
+    const { mutate: starEmail } = useStarEmailMutation();
+    const { mutate: unstarEmail } = useUnstarEmailMutation();
+    const { mutate: markAsRead } = useMarkAsReadMutation();
+    const { mutate: markAsUnread } = useMarkAsUnreadMutation();
 
-    const [folders, setFolders] = useState<Folder[]>([]);
     const [selectedFolder, setSelectedFolder] = useState("INBOX");
     const [selectedEmail, setSelectedEmail] = useState<EmailMessage | null>(null);
     const [selectedEmailIds, setSelectedEmailIds] = useState<Set<string>>(new Set());
@@ -73,17 +69,17 @@ export default function Dashboard() {
     const [searchQuery, setSearchQuery] = useState("");
     const [threadMessages, setThreadMessages] = useState<ThreadMessage[]>([]);
 
-    // Fetch emails from selected mailbox using RTK Query infinite query
+    // Fetch emails from selected mailbox using TanStack Query infinite query
     const {
         emails,
         isLoading: isLoadingEmails,
         isFetching: isFetchingEmails,
-        error: emailsError,
         hasNextPage,
         loadNextPage,
-        resetPagination,
-        refetch: refetchEmails,
-    } = useMailboxEmailsInfinite({ labelId: selectedFolder, q: searchQuery });
+    } = useMailboxEmailsInfiniteTanstack({
+        labelId: selectedFolder || "",
+        q: searchQuery,
+    });
 
     const sentinelRef = useInfiniteScroll({
         hasMore: hasNextPage,
@@ -92,22 +88,19 @@ export default function Dashboard() {
     });
 
     // Get thread details when email is selected
-    const {
-        data: threadDetail,
-        isLoading: isLoadingThread,
-        refetch: refetchThread,
-    } = useGetThreadDetailQuery(selectedEmail?.threadId || "", {
-        skip: !selectedEmail,
-    });
+    const { threadDetail, isLoading: isLoadingThread } = useThreadDetailTanstack(
+        selectedEmail?.id || ""
+    );
 
     // Update thread messages when thread data is fetched
     useEffect(() => {
         if (threadDetail?.messages) {
             setThreadMessages(threadDetail.messages);
         }
-    }, [threadDetail]);
+    }, [threadDetail?.messages]);
 
-    // Load mailboxes from RTK Query API
+    // Setup folders from mailboxes
+    const [folders, setFolders] = useState<Folder[]>([]);
     useEffect(() => {
         if (mailboxes && mailboxes.length > 0) {
             const foldersData: Folder[] = mailboxes
@@ -130,10 +123,9 @@ export default function Dashboard() {
 
     // Reset emails when folder changes
     useEffect(() => {
-        resetPagination();
         setSelectedEmail(null);
         setSelectedEmailIds(new Set());
-    }, [selectedFolder, resetPagination]);
+    }, [selectedFolder]);
 
     const handleEmailClick = (email: EmailMessage) => {
         setShowMobileDetail(true);
@@ -141,47 +133,13 @@ export default function Dashboard() {
     };
 
     const handleToggleStar = (emailId: string) => {
-        const email = emails.find((e) => e.id === emailId);
+        const email = emails.find((e: EmailMessage) => e.id === emailId);
         if (!email) return;
 
-        // Optimistic update - update selectedEmail immediately
-        if (selectedEmail?.id === emailId) {
-            setSelectedEmail({ ...selectedEmail, isStarred: !selectedEmail.isStarred });
-        }
-
-        // Call API
         if (email.isStarred) {
-            unstarEmail(emailId)
-                .unwrap()
-                .then(() => {
-                    refetchEmails();
-                    if (selectedEmail) {
-                        refetchThread();
-                    }
-                })
-                .catch((error) => {
-                    console.error("Error unstarring email:", error);
-                    // Revert optimistic update on error
-                    if (selectedEmail?.id === emailId) {
-                        setSelectedEmail({ ...selectedEmail, isStarred: true });
-                    }
-                });
+            unstarEmail(emailId);
         } else {
-            starEmail(emailId)
-                .unwrap()
-                .then(() => {
-                    refetchEmails();
-                    if (selectedEmail) {
-                        refetchThread();
-                    }
-                })
-                .catch((error) => {
-                    console.error("Error starring email:", error);
-                    // Revert optimistic update on error
-                    if (selectedEmail?.id === emailId) {
-                        setSelectedEmail({ ...selectedEmail, isStarred: false });
-                    }
-                });
+            starEmail(emailId);
         }
     };
 
@@ -207,32 +165,8 @@ export default function Dashboard() {
         const emailIds = Array.from(selectedEmailIds);
         if (emailIds.length === 0) return;
 
-        // Optimistic update - update selectedEmail if it's in the selection
-        if (selectedEmail && emailIds.includes(selectedEmail.id)) {
-            setSelectedEmail({ ...selectedEmail, isUnread: false });
-        }
-
-        let completed = 0;
-        // Call mark as read for each email
         emailIds.forEach((emailId) => {
-            markAsRead(emailId)
-                .unwrap()
-                .then(() => {
-                    completed++;
-                    if (completed === emailIds.length) {
-                        refetchEmails();
-                        if (selectedEmail) {
-                            refetchThread();
-                        }
-                    }
-                })
-                .catch((error) => {
-                    console.error(`Error marking email ${emailId} as read:`, error);
-                    // Revert optimistic update on error
-                    if (selectedEmail?.id === emailId) {
-                        setSelectedEmail({ ...selectedEmail, isUnread: true });
-                    }
-                });
+            markAsRead(emailId);
         });
 
         setSelectedEmailIds(new Set());
@@ -242,32 +176,8 @@ export default function Dashboard() {
         const emailIds = Array.from(selectedEmailIds);
         if (emailIds.length === 0) return;
 
-        // Optimistic update - update selectedEmail if it's in the selection
-        if (selectedEmail && emailIds.includes(selectedEmail.id)) {
-            setSelectedEmail({ ...selectedEmail, isUnread: true });
-        }
-
-        let completed = 0;
-        // Call mark as unread for each email
         emailIds.forEach((emailId) => {
-            markAsUnread(emailId)
-                .unwrap()
-                .then(() => {
-                    completed++;
-                    if (completed === emailIds.length) {
-                        refetchEmails();
-                        if (selectedEmail) {
-                            refetchThread();
-                        }
-                    }
-                })
-                .catch((error) => {
-                    console.error(`Error marking email ${emailId} as unread:`, error);
-                    // Revert optimistic update on error
-                    if (selectedEmail?.id === emailId) {
-                        setSelectedEmail({ ...selectedEmail, isUnread: false });
-                    }
-                });
+            markAsUnread(emailId);
         });
 
         setSelectedEmailIds(new Set());
@@ -277,18 +187,11 @@ export default function Dashboard() {
         const emailIds = Array.from(selectedEmailIds);
         if (emailIds.length === 0) return;
 
-        batchDeleteEmails({ ids: emailIds })
-            .unwrap()
-            .then(() => {
-                setSelectedEmailIds(new Set());
-                if (selectedEmail && selectedEmailIds.has(selectedEmail.id)) {
-                    setSelectedEmail(null);
-                }
-                refetchEmails();
-            })
-            .catch((error) => {
-                console.error("Error deleting emails:", error);
-            });
+        batchDeleteEmails({ ids: emailIds });
+        setSelectedEmailIds(new Set());
+        if (selectedEmail && selectedEmailIds.has(selectedEmail.id)) {
+            setSelectedEmail(null);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent, email: EmailMessage) => {
@@ -348,28 +251,6 @@ export default function Dashboard() {
                                         Loading mailboxes...
                                     </p>
                                 </div>
-                            ) : mailboxesError ? (
-                                <div className="p-4">
-                                    <div className="rounded-lg bg-destructive/10 p-4 border border-destructive/20">
-                                        <p className="text-sm text-destructive font-medium mb-2">
-                                            Failed to load mailboxes
-                                        </p>
-                                        <p className="text-xs text-destructive/80 mb-3">
-                                            {typeof mailboxesError === "string"
-                                                ? mailboxesError
-                                                : "An error occurred while loading mailboxes"}
-                                        </p>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={refetchMailboxes}
-                                            className="cursor-pointer"
-                                        >
-                                            <RefreshCw className="w-3 h-3 mr-1" />
-                                            Retry
-                                        </Button>
-                                    </div>
-                                </div>
                             ) : (
                                 <nav className="p-2">
                                     {folders.length > 0 ? (
@@ -389,7 +270,7 @@ export default function Dashboard() {
                                                             ? "bg-mail-selected text-foreground"
                                                             : "text-muted-foreground"
                                                     }
-                        `}
+                                                `}
                                             >
                                                 {folder.icon}
                                                 <span className="flex-1">{folder.name}</span>
@@ -444,9 +325,7 @@ export default function Dashboard() {
                                 className="cursor-pointer"
                                 size="sm"
                                 onClick={() => {
-                                    resetPagination();
-                                    refetchEmails();
-                                    refetchMailboxes();
+                                    // TanStack Query handles refetch automatically
                                 }}
                                 disabled={isFetchingEmails || isLoadingMailboxes}
                             >
@@ -513,32 +392,7 @@ export default function Dashboard() {
                         )}
 
                         <div className="divide-y">
-                            {emailsError ? (
-                                <div className="p-4">
-                                    <div className="rounded-lg bg-destructive/10 p-4 border border-destructive/20">
-                                        <p className="text-sm text-destructive font-medium mb-2">
-                                            Failed to load emails
-                                        </p>
-                                        <p className="text-xs text-destructive/80 mb-3">
-                                            {typeof emailsError === "string"
-                                                ? emailsError
-                                                : "An error occurred while loading emails"}
-                                        </p>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => {
-                                                resetPagination();
-                                                refetchEmails();
-                                            }}
-                                            className="cursor-pointer"
-                                        >
-                                            <RefreshCw className="w-3 h-3 mr-1" />
-                                            Retry
-                                        </Button>
-                                    </div>
-                                </div>
-                            ) : emails.length === 0 && !showLoadingOverlay ? (
+                            {emails.length === 0 && !showLoadingOverlay ? (
                                 <div className="p-8 text-center text-muted-foreground">
                                     <Mail className="w-12 h-12 mx-auto mb-2 opacity-50" />
                                     <p>No emails in this folder</p>
@@ -695,10 +549,6 @@ export default function Dashboard() {
                                                     ? () => setShowMobileDetail(false)
                                                     : undefined
                                             }
-                                            onRefreshEmails={() => {
-                                                refetchEmails();
-                                                refetchThread();
-                                            }}
                                         />
                                     ))}
                                 </div>

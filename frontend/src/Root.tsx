@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { store } from "./store";
 import { Provider } from "react-redux";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "./components/theme-provider";
 import { useAppDispatch, useAppSelector } from "./hooks/redux";
 import { initializeAuth, setInitialized } from "./store/authSlice";
+import { queryClient } from "./services/tanstack-query";
 import App from "./App";
 
 const GOOGLE_CLIENT_ID =
@@ -58,13 +60,15 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
 const Root = () => {
     return (
         <Provider store={store}>
-            <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-                <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-                    <AuthInitializer>
-                        <App />
-                    </AuthInitializer>
-                </ThemeProvider>
-            </GoogleOAuthProvider>
+            <QueryClientProvider client={queryClient}>
+                <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+                    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+                        <AuthInitializer>
+                            <App />
+                        </AuthInitializer>
+                    </ThemeProvider>
+                </GoogleOAuthProvider>
+            </QueryClientProvider>
         </Provider>
     );
 };
