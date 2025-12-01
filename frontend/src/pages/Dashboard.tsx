@@ -439,7 +439,16 @@ export default function Dashboard() {
                                                                     : "font-semibold"
                                                             }`}
                                                         >
-                                                            {email.header.from.split("<")[0].trim()}
+                                                            {email.participantEmails ??
+                                                                email.header.from
+                                                                    .split("<")[0]
+                                                                    .trim()}
+                                                            {email.messageCount &&
+                                                                email.messageCount > 1 && (
+                                                                    <span className="ml-2 text-xs text-muted-foreground">
+                                                                        {email.messageCount}
+                                                                    </span>
+                                                                )}
                                                         </span>
                                                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                                                             {formatDateShort(email.header.date)}

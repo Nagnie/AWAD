@@ -29,6 +29,8 @@ export interface EmailMessage {
     isUnread: boolean;
     isStarred: boolean;
     isImportant: boolean;
+    messageCount?: number;
+    participantEmails?: string;
 }
 
 export interface EmailsData {
