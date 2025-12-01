@@ -1,2 +1,8 @@
-export { mailboxesApi, useGetMailboxesQuery, useGetMailboxEmailsQuery } from "./api";
-export type { Mailbox, EmailMessage, EmailHeader, EmailsData } from "./types";
+export {
+    useGetMailboxesQuery,
+    useGetMailboxEmailsQuery,
+    useInfiniteQueryGetMailboxEmails,
+    useGetThreadDetailQuery,
+} from "./useMailboxesQueries";
+export { fetchMailboxes, fetchMailboxEmails, fetchThreadDetail } from "./api";
+export type { Mailbox, EmailMessage, EmailHeader, EmailsData, ThreadDetail } from "./types";

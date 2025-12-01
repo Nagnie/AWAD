@@ -1,70 +1,33 @@
-/**
- * Custom hook để fetch emails từ mailbox
- * Hỗ trợ infinite scroll pagination với pageToken
- * Accumulates emails từ các pages thay vì replace
- */
-
-import { useGetMailboxEmailsQuery } from "@/services/mailboxes";
-import { useCallback, useEffect, useState } from "react";
-import type { EmailMessage } from "@/services/mailboxes";
+import { useInfiniteQueryGetMailboxEmails } from "@/services/tanstack-query";
 
 interface UseMailboxEmailsOptions {
     labelId: string;
     q?: string;
 }
 
+/**
+ * Hook để lấy emails với infinite scroll
+ * Replaces RTK Query useMailboxEmailsInfinite hook
+ */
 export const useMailboxEmails = ({ labelId, q }: UseMailboxEmailsOptions) => {
-    const [pageToken, setPageToken] = useState<string | undefined>(undefined);
-    const [allEmails, setAllEmails] = useState<EmailMessage[]>([]);
-    const [isFirstLoad, setIsFirstLoad] = useState(true);
+    const { data, hasNextPage, fetchNextPage, isFetching, isPending, error, isError } =
+        useInfiniteQueryGetMailboxEmails(labelId, q);
 
-    const { data, isLoading, error, isFetching } = useGetMailboxEmailsQuery(
-        { labelId, q, pageToken },
-        { skip: !labelId }
-    );
-
-    // Khi labelId hoặc q thay đổi, reset pagination và emails
-    useEffect(() => {
-        setPageToken(undefined);
-        setAllEmails([]);
-        setIsFirstLoad(true);
-    }, [labelId, q]);
-
-    // Khi data thay đổi, accumulate emails
-    useEffect(() => {
-        if (data?.emails) {
-            if (isFirstLoad) {
-                // First load - replace dengan emails mới
-                setAllEmails(data.emails);
-                setIsFirstLoad(false);
-            } else if (pageToken) {
-                // Load next page - append emails
-                setAllEmails((prev) => [...prev, ...data.emails]);
-            }
-        }
-    }, [data?.emails, isFirstLoad, pageToken]);
-
-    const loadNextPage = useCallback(() => {
-        if (data?.nextPageToken) {
-            setPageToken(data.nextPageToken);
-        }
-    }, [data?.nextPageToken]);
-
-    const resetPagination = useCallback(() => {
-        setPageToken(undefined);
-        setAllEmails([]);
-        setIsFirstLoad(true);
-    }, []);
+    // Flatten pages into single array
+    const emails = data?.pages.flatMap((page) => page.emails) || [];
 
     return {
-        emails: allEmails,
-        nextPageToken: data?.nextPageToken,
-        resultSizeEstimate: data?.resultSizeEstimate || 0,
-        isLoading,
+        emails,
+        isLoading: isPending,
         isFetching,
-        error,
-        loadNextPage,
-        resetPagination,
-        hasNextPage: !!data?.nextPageToken,
+        error: isError ? error?.message : null,
+        hasNextPage: hasNextPage ?? false,
+        loadNextPage: fetchNextPage,
+        resetPagination: () => {
+            // TanStack Query handles this automatically on refetch
+        },
+        refetch: () => {
+            // Refetch is built-in
+        },
     };
 };

@@ -25,13 +25,10 @@ import { type Folder } from "@/services/mail";
 import { EmailDetail } from "@/components/EmailDetail";
 import { formatDateShort, formatMailboxName } from "@/lib/utils";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useMailboxes } from "@/hooks/useMailboxes";
+import { useMailboxEmails } from "@/hooks/useMailboxEmails";
+import { useThreadDetail } from "@/hooks/useThreadDetail";
 import type { EmailMessage } from "@/services/mailboxes";
-import type { ThreadMessage } from "@/services/mailboxes/types";
-import {
-    useMailboxesTanstack,
-    useMailboxEmailsInfiniteTanstack,
-    useThreadDetailTanstack,
-} from "@/hooks/tanstack-hooks";
 import {
     useBatchDeleteEmailsMutation,
     useStarEmailMutation,
@@ -39,6 +36,7 @@ import {
     useMarkAsReadMutation,
     useMarkAsUnreadMutation,
 } from "@/services/tanstack-query";
+import type { ThreadMessage } from "@/services/mailboxes/types";
 
 // Icon mapping for mailbox IDs
 const mailboxIcons: Record<string, React.ReactNode> = {
@@ -51,7 +49,7 @@ const mailboxIcons: Record<string, React.ReactNode> = {
 };
 
 export default function Dashboard() {
-    const { mailboxes, isLoading: isLoadingMailboxes } = useMailboxesTanstack();
+    const { mailboxes, isLoading: isLoadingMailboxes } = useMailboxes();
 
     // Email operation mutations
     const { mutate: batchDeleteEmails } = useBatchDeleteEmailsMutation();
@@ -76,7 +74,7 @@ export default function Dashboard() {
         isFetching: isFetchingEmails,
         hasNextPage,
         loadNextPage,
-    } = useMailboxEmailsInfiniteTanstack({
+    } = useMailboxEmails({
         labelId: selectedFolder || "",
         q: searchQuery,
     });
@@ -88,9 +86,7 @@ export default function Dashboard() {
     });
 
     // Get thread details when email is selected
-    const { threadDetail, isLoading: isLoadingThread } = useThreadDetailTanstack(
-        selectedEmail?.id || ""
-    );
+    const { threadDetail, isLoading: isLoadingThread } = useThreadDetail(selectedEmail?.id || "");
 
     // Update thread messages when thread data is fetched
     useEffect(() => {

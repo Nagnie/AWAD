@@ -1,13 +1,16 @@
-import { useGetMailboxesQuery } from "@/services/mailboxes";
+import { useGetMailboxesQuery } from "@/services/tanstack-query";
 
+/**
+ * Hook để lấy mailboxes data
+ * Replaces RTK Query useMailboxes hook
+ */
 export const useMailboxes = () => {
-    const { data: mailboxes, isLoading, error, isFetching, refetch } = useGetMailboxesQuery();
+    const { data = [], isPending, isError, error, refetch } = useGetMailboxesQuery();
 
     return {
-        mailboxes: mailboxes || [],
-        isLoading,
-        isFetching,
-        error,
+        mailboxes: data,
+        isLoading: isPending,
+        error: isError ? error?.message : null,
         refetch,
     };
 };

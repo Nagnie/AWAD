@@ -1,10 +1,3 @@
-/**
- * Email Operations API using RTK Query
- * Handle modify, delete, star, archive, etc.
- */
-
-import { createApi, type BaseQueryFn } from "@reduxjs/toolkit/query/react";
-import type { AxiosError } from "axios";
 import { apiClient } from "@/services/core/api-client";
 import type { ApiResponse } from "@/services/core/types";
 import type {
@@ -13,207 +6,144 @@ import type {
     ModifyEmailDto,
     BatchOperationResponse,
 } from "./types";
-import type { EmailMessage } from "../mailboxes/types";
+import type { EmailMessage } from "@/services/mailboxes/types";
 
-const axiosBaseQuery: BaseQueryFn<
-    {
-        url: string;
-        method?: string;
-        data?: unknown;
-        params?: unknown;
-    },
-    unknown,
-    AxiosError | { status?: number; message: string; data?: unknown }
-> = async ({ url, method = "GET", data, params }) => {
-    try {
-        const client = apiClient.getClient();
-        const result = await client({
-            url,
-            method,
-            data,
-            params,
-        });
-        return { data: result.data };
-    } catch (axiosError) {
-        const err = axiosError as AxiosError;
-        return {
-            error: {
-                status: err.response?.status,
-                message: err.message || "An unknown error occurred",
-                data: err.response?.data,
-            },
-        };
-    }
+/**
+ * Mark email as read
+ */
+export const markEmailAsRead = async (emailId: string): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(
+        `/api/v1/emails/${emailId}/mark-as-read`
+    );
+    return response.data.data || ({} as EmailMessage);
 };
 
-export const emailApi = createApi({
-    reducerPath: "emailApi",
-    baseQuery: axiosBaseQuery,
-    tagTypes: ["Email", "Emails"],
-    endpoints: (builder) => ({
-        // Delete multiple emails at once
-        batchDeleteEmails: builder.mutation<BatchOperationResponse, DeleteBatchEmailDto>({
-            query: (deleteBatchEmailDto) => ({
-                url: "/api/v1/emails/batch-delete",
-                method: "DELETE",
-                data: deleteBatchEmailDto,
-            }),
-            transformResponse: (response: ApiResponse<BatchOperationResponse>) =>
-                response.data || { success: false },
-            invalidatesTags: ["Emails"],
-        }),
+/**
+ * Mark email as unread
+ */
+export const markEmailAsUnread = async (emailId: string): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(
+        `/api/v1/emails/${emailId}/mark-as-unread`
+    );
+    return response.data.data || ({} as EmailMessage);
+};
 
-        // Delete a single email
-        deleteEmail: builder.mutation<BatchOperationResponse, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}`,
-                method: "DELETE",
-            }),
-            transformResponse: (response: ApiResponse<BatchOperationResponse>) =>
-                response.data || { success: false },
-            invalidatesTags: ["Emails"],
-        }),
+/**
+ * Star an email
+ */
+export const starEmail = async (emailId: string): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(`/api/v1/emails/${emailId}/star`);
+    return response.data.data || ({} as EmailMessage);
+};
 
-        // Modify a single email (add/remove labels)
-        modifyEmail: builder.mutation<EmailMessage, { emailId: string; modifyDto: ModifyEmailDto }>(
-            {
-                query: ({ emailId, modifyDto }) => ({
-                    url: `/api/v1/emails/${emailId}/modify`,
-                    method: "POST",
-                    data: modifyDto,
-                }),
-                transformResponse: (response: ApiResponse<EmailMessage>) =>
-                    response.data || ({} as EmailMessage),
-                invalidatesTags: (_result, _error, { emailId }) => [
-                    { type: "Email", id: emailId },
-                    "Emails",
-                ],
-            }
-        ), // Batch modify multiple emails
-        batchModifyEmails: builder.mutation<BatchOperationResponse, BatchModifyEmailDto>({
-            query: (batchModifyDto) => ({
-                url: "/api/v1/emails/batch-modify",
-                method: "POST",
-                data: batchModifyDto,
-            }),
-            transformResponse: (response: ApiResponse<BatchOperationResponse>) =>
-                response.data || { success: false },
-            invalidatesTags: ["Emails"],
-        }),
+/**
+ * Unstar an email
+ */
+export const unstarEmail = async (emailId: string): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(
+        `/api/v1/emails/${emailId}/unstar`
+    );
+    return response.data.data || ({} as EmailMessage);
+};
 
-        // Mark email as read
-        markAsRead: builder.mutation<EmailMessage, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}/mark-as-read`,
-                method: "POST",
-            }),
-            transformResponse: (response: ApiResponse<EmailMessage>) =>
-                response.data || ({} as EmailMessage),
-            invalidatesTags: ["Emails"],
-        }),
+/**
+ * Delete a single email
+ */
+export const deleteEmail = async (emailId: string): Promise<BatchOperationResponse> => {
+    const client = apiClient.getClient();
+    const response = await client.delete<ApiResponse<BatchOperationResponse>>(
+        `/api/v1/emails/${emailId}`
+    );
+    return response.data.data || { success: false };
+};
 
-        // Mark email as unread
-        markAsUnread: builder.mutation<EmailMessage, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}/mark-as-unread`,
-                method: "POST",
-            }),
-            transformResponse: (response: ApiResponse<EmailMessage>) =>
-                response.data || ({} as EmailMessage),
-            invalidatesTags: ["Emails"],
-        }),
+/**
+ * Delete multiple emails at once
+ */
+export const batchDeleteEmails = async (
+    dto: DeleteBatchEmailDto
+): Promise<BatchOperationResponse> => {
+    const client = apiClient.getClient();
+    const response = await client.delete<ApiResponse<BatchOperationResponse>>(
+        "/api/v1/emails/batch-delete",
+        { data: dto }
+    );
+    return response.data.data || { success: false };
+};
 
-        // Star an email
-        starEmail: builder.mutation<EmailMessage, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}/star`,
-                method: "POST",
-            }),
-            transformResponse: (response: ApiResponse<EmailMessage>) =>
-                response.data || ({} as EmailMessage),
-            invalidatesTags: ["Emails"],
-        }),
+/**
+ * Modify a single email (add/remove labels)
+ */
+export const modifyEmail = async (
+    emailId: string,
+    modifyDto: ModifyEmailDto
+): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(
+        `/api/v1/emails/${emailId}/modify`,
+        modifyDto
+    );
+    return response.data.data || ({} as EmailMessage);
+};
 
-        // Unstar an email
-        unstarEmail: builder.mutation<EmailMessage, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}/unstar`,
-                method: "POST",
-            }),
-            transformResponse: (response: ApiResponse<EmailMessage>) =>
-                response.data || ({} as EmailMessage),
-            invalidatesTags: ["Emails"],
-        }),
+/**
+ * Batch modify multiple emails
+ */
+export const batchModifyEmails = async (
+    dto: BatchModifyEmailDto
+): Promise<BatchOperationResponse> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<BatchOperationResponse>>(
+        "/api/v1/emails/batch-modify",
+        dto
+    );
+    return response.data.data || { success: false };
+};
 
-        // Move email to trash
-        moveToTrash: builder.mutation<EmailMessage, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}/move-to-trash`,
-                method: "POST",
-            }),
-            transformResponse: (response: ApiResponse<EmailMessage>) =>
-                response.data || ({} as EmailMessage),
-            invalidatesTags: (_result, _error, emailId) => [
-                { type: "Email", id: emailId },
-                "Emails",
-            ],
-        }),
+/**
+ * Move email to trash
+ */
+export const moveEmailToTrash = async (emailId: string): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(
+        `/api/v1/emails/${emailId}/move-to-trash`
+    );
+    return response.data.data || ({} as EmailMessage);
+};
 
-        // Move email back to inbox
-        moveToInbox: builder.mutation<EmailMessage, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}/move-to-inbox`,
-                method: "POST",
-            }),
-            transformResponse: (response: ApiResponse<EmailMessage>) =>
-                response.data || ({} as EmailMessage),
-            invalidatesTags: (_result, _error, emailId) => [
-                { type: "Email", id: emailId },
-                "Emails",
-            ],
-        }),
+/**
+ * Move email back to inbox
+ */
+export const moveEmailToInbox = async (emailId: string): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(
+        `/api/v1/emails/${emailId}/move-to-inbox`
+    );
+    return response.data.data || ({} as EmailMessage);
+};
 
-        // Archive an email
-        archiveEmail: builder.mutation<EmailMessage, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}/archive`,
-                method: "POST",
-            }),
-            transformResponse: (response: ApiResponse<EmailMessage>) =>
-                response.data || ({} as EmailMessage),
-            invalidatesTags: (_result, _error, emailId) => [
-                { type: "Email", id: emailId },
-                "Emails",
-            ],
-        }),
+/**
+ * Archive an email
+ */
+export const archiveEmail = async (emailId: string): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(
+        `/api/v1/emails/${emailId}/archive`
+    );
+    return response.data.data || ({} as EmailMessage);
+};
 
-        // Restore email from trash
-        untrashEmail: builder.mutation<EmailMessage, string>({
-            query: (emailId) => ({
-                url: `/api/v1/emails/${emailId}/untrash`,
-                method: "POST",
-            }),
-            transformResponse: (response: ApiResponse<EmailMessage>) =>
-                response.data || ({} as EmailMessage),
-            invalidatesTags: (_result, _error, emailId) => [
-                { type: "Email", id: emailId },
-                "Emails",
-            ],
-        }),
-    }),
-});
-
-export const {
-    useBatchDeleteEmailsMutation,
-    useDeleteEmailMutation,
-    useModifyEmailMutation,
-    useBatchModifyEmailsMutation,
-    useMarkAsReadMutation,
-    useMarkAsUnreadMutation,
-    useStarEmailMutation,
-    useUnstarEmailMutation,
-    useMoveToTrashMutation,
-    useMoveToInboxMutation,
-    useArchiveEmailMutation,
-    useUntrashEmailMutation,
-} = emailApi;
+/**
+ * Restore email from trash
+ */
+export const untrashEmail = async (emailId: string): Promise<EmailMessage> => {
+    const client = apiClient.getClient();
+    const response = await client.post<ApiResponse<EmailMessage>>(
+        `/api/v1/emails/${emailId}/untrash`
+    );
+    return response.data.data || ({} as EmailMessage);
+};
