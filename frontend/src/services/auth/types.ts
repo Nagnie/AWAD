@@ -1,7 +1,3 @@
-/**
- * Auth API types
- */
-
 export interface GoogleLoginRequest {
     code: string;
 }

@@ -1,13 +1,3 @@
-/**
- * Services - Main entry point
- *
- * Cấu trúc:
- * - core/: API client, base types
- * - auth/: Authentication endpoints
- * - mail/: Email endpoints
- * - mocks/: Mock data & services
- */
-
 // Core
 export { api, apiClient } from "./core";
 export type { ApiResponse } from "./core";
@@ -27,5 +17,5 @@ export { mailApi } from "./mail";
 export type { Email, Mailbox, Folder, EmailsResponse } from "./mail";
 
 // Mailboxes
-export { mailboxesApi, useGetMailboxesQuery, useGetMailboxEmailsQuery } from "./mailboxes";
+export { useGetMailboxesQuery, useGetMailboxEmailsQuery } from "./mailboxes";
 export type { Mailbox as MailboxData, EmailMessage, EmailHeader, EmailsData } from "./mailboxes";

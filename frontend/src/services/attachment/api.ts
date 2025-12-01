@@ -1,9 +1,6 @@
 import { apiClient } from "@/services/core/api-client";
 import type { AttachmentDownloadParams, AttachmentDownloadResponse } from "./types";
 
-/**
- * Download email attachment
- */
 export const downloadAttachment = async (
     params: AttachmentDownloadParams
 ): Promise<AttachmentDownloadResponse> => {

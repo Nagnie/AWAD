@@ -1,7 +1,3 @@
-/**
- * Auth service exports
- */
-
 export { authApi } from "./api";
 export type {
     GoogleLoginRequest,

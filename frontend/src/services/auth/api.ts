@@ -1,7 +1,3 @@
-/**
- * Auth API endpoints
- */
-
 import api from "../core";
 import type { ApiResponse } from "../core";
 import type {

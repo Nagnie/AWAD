@@ -1,8 +1,3 @@
-/**
- * API Client instance với interceptors
- * Xử lý authentication, token refresh, và error handling
- */
-
 import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
