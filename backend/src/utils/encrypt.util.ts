@@ -1,4 +1,3 @@
-// src/utils/encryption.util.ts
 import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'crypto';
 import { promisify } from 'util';
 
@@ -19,6 +18,9 @@ export async function decrypt(text: string): Promise<string> {
   const encryptedText = Buffer.from(textParts.join(':'), 'hex');
   const key = (await promisify(scrypt)(PASSWORD, 'salt', 32)) as Buffer;
   const decipher = createDecipheriv('aes-256-ctr', key, iv);
-  const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+  const decrypted = Buffer.concat([
+    decipher.update(encryptedText),
+    decipher.final(),
+  ]);
   return decrypted.toString();
 }
