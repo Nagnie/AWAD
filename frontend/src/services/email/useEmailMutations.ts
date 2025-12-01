@@ -6,6 +6,7 @@ import type {
     EmailsData,
     ThreadDetail,
     ThreadMessage,
+    Mailbox,
 } from "@/services/mailboxes/types";
 import {
     markEmailAsRead,
@@ -64,6 +65,25 @@ const updateThreadDetailInCache = (
     };
 };
 
+// Helper function to update mailboxes list cache
+const updateMailboxesInCache = (
+    mailboxes: Mailbox[] | undefined,
+    labelIds: string[],
+    unreadDifference: number
+): Mailbox[] | undefined => {
+    if (!mailboxes || unreadDifference === 0) return mailboxes;
+
+    return mailboxes.map((mailbox) => {
+        if (labelIds.includes(mailbox.id)) {
+            return {
+                ...mailbox,
+                messagesUnread: Math.max(0, mailbox.messagesUnread + unreadDifference),
+            };
+        }
+        return mailbox;
+    });
+};
+
 // Mutation: Mark email as read
 export const useMarkAsReadMutation = () => {
     const queryClient = useQueryClient();
@@ -74,6 +94,7 @@ export const useMarkAsReadMutation = () => {
             // Cancel ongoing queries
             await queryClient.cancelQueries({ queryKey: mailboxesKeys.emails() });
             await queryClient.cancelQueries({ queryKey: mailboxesKeys.threads() });
+            await queryClient.cancelQueries({ queryKey: mailboxesKeys.list() });
 
             // Snapshot old data
             const previousEmailsData = queryClient.getQueriesData({
@@ -83,6 +104,36 @@ export const useMarkAsReadMutation = () => {
             const previousThreadsData = queryClient.getQueriesData({
                 queryKey: mailboxesKeys.threads(),
             });
+
+            const previousMailboxesData = queryClient.getQueriesData({
+                queryKey: mailboxesKeys.list(),
+            });
+
+            // Get the email to check current unread status
+            let emailLabelIds: string[] = [];
+            let wasUnread = false;
+
+            for (const [, data] of previousEmailsData) {
+                if (data && typeof data === "object" && "pages" in data) {
+                    for (const page of (data as InfiniteData<EmailsData>).pages) {
+                        const email = page.emails.find((e: EmailMessage) => e.id === emailId);
+                        if (email) {
+                            emailLabelIds = email.labelIds;
+                            wasUnread = email.isUnread;
+                            break;
+                        }
+                    }
+                } else if (data && typeof data === "object" && "emails" in data) {
+                    const email = (data as EmailsData).emails.find(
+                        (e: EmailMessage) => e.id === emailId
+                    );
+                    if (email) {
+                        emailLabelIds = email.labelIds;
+                        wasUnread = email.isUnread;
+                        break;
+                    }
+                }
+            }
 
             // Optimistic update - update all email queries
             queryClient.setQueriesData(
@@ -106,7 +157,15 @@ export const useMarkAsReadMutation = () => {
                 }
             );
 
-            return { previousEmailsData, previousThreadsData };
+            // Optimistic update - update mailboxes unread count
+            const unreadDifference = wasUnread ? -1 : 0;
+            queryClient.setQueriesData(
+                { queryKey: mailboxesKeys.list() },
+                (oldData: Mailbox[] | undefined) =>
+                    updateMailboxesInCache(oldData, emailLabelIds, unreadDifference)
+            );
+
+            return { previousEmailsData, previousThreadsData, previousMailboxesData };
         },
         onError: (_err, _variables, context) => {
             // Rollback on error
@@ -120,11 +179,17 @@ export const useMarkAsReadMutation = () => {
                     queryClient.setQueryData(key, value);
                 });
             }
+            if (context?.previousMailboxesData) {
+                context.previousMailboxesData.forEach(([key, value]) => {
+                    queryClient.setQueryData(key, value);
+                });
+            }
         },
         onSuccess: () => {
             // Refetch to sync with server
             queryClient.invalidateQueries({ queryKey: mailboxesKeys.emails() });
             queryClient.invalidateQueries({ queryKey: mailboxesKeys.threads() });
+            // queryClient.invalidateQueries({ queryKey: mailboxesKeys.list() });
         },
     });
 };
@@ -139,6 +204,7 @@ export const useMarkAsUnreadMutation = () => {
             // Cancel ongoing queries
             await queryClient.cancelQueries({ queryKey: mailboxesKeys.emails() });
             await queryClient.cancelQueries({ queryKey: mailboxesKeys.threads() });
+            await queryClient.cancelQueries({ queryKey: mailboxesKeys.list() });
 
             // Snapshot old data
             const previousEmailsData = queryClient.getQueriesData({
@@ -148,6 +214,36 @@ export const useMarkAsUnreadMutation = () => {
             const previousThreadsData = queryClient.getQueriesData({
                 queryKey: mailboxesKeys.threads(),
             });
+
+            const previousMailboxesData = queryClient.getQueriesData({
+                queryKey: mailboxesKeys.list(),
+            });
+
+            // Get the email to check current unread status
+            let emailLabelIds: string[] = [];
+            let wasUnread = false;
+
+            for (const [, data] of previousEmailsData) {
+                if (data && typeof data === "object" && "pages" in data) {
+                    for (const page of (data as InfiniteData<EmailsData>).pages) {
+                        const email = page.emails.find((e: EmailMessage) => e.id === emailId);
+                        if (email) {
+                            emailLabelIds = email.labelIds;
+                            wasUnread = email.isUnread;
+                            break;
+                        }
+                    }
+                } else if (data && typeof data === "object" && "emails" in data) {
+                    const email = (data as EmailsData).emails.find(
+                        (e: EmailMessage) => e.id === emailId
+                    );
+                    if (email) {
+                        emailLabelIds = email.labelIds;
+                        wasUnread = email.isUnread;
+                        break;
+                    }
+                }
+            }
 
             // Optimistic update - update all email queries
             queryClient.setQueriesData(
@@ -171,7 +267,15 @@ export const useMarkAsUnreadMutation = () => {
                 }
             );
 
-            return { previousEmailsData, previousThreadsData };
+            // Optimistic update - update mailboxes unread count
+            const unreadDifference = !wasUnread ? 1 : 0;
+            queryClient.setQueriesData(
+                { queryKey: mailboxesKeys.list() },
+                (oldData: Mailbox[] | undefined) =>
+                    updateMailboxesInCache(oldData, emailLabelIds, unreadDifference)
+            );
+
+            return { previousEmailsData, previousThreadsData, previousMailboxesData };
         },
         onError: (_err, _variables, context) => {
             // Rollback on error
@@ -185,11 +289,17 @@ export const useMarkAsUnreadMutation = () => {
                     queryClient.setQueryData(key, value);
                 });
             }
+            if (context?.previousMailboxesData) {
+                context.previousMailboxesData.forEach(([key, value]) => {
+                    queryClient.setQueryData(key, value);
+                });
+            }
         },
         onSuccess: () => {
             // Refetch to sync with server
             queryClient.invalidateQueries({ queryKey: mailboxesKeys.emails() });
             queryClient.invalidateQueries({ queryKey: mailboxesKeys.threads() });
+            // queryClient.invalidateQueries({ queryKey: mailboxesKeys.list() });
         },
     });
 };

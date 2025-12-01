@@ -43,9 +43,18 @@ export const useInfiniteQueryGetMailboxEmails = (labelId: string, q?: string) =>
 
 // Query: Get thread details
 export const useGetThreadDetailQuery = (threadId: string, enabled = true) => {
+    const isEnabled = enabled && !!threadId;
+    console.log(
+        "🚀 ~ useGetThreadDetailQuery ~ threadId:",
+        threadId,
+        "enabled:",
+        enabled,
+        "isEnabled:",
+        isEnabled
+    );
     return useQuery({
         queryKey: mailboxesKeys.thread(threadId),
         queryFn: () => fetchThreadDetail(threadId),
-        enabled: enabled && !!threadId,
+        enabled: isEnabled,
     });
 };

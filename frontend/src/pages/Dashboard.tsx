@@ -86,7 +86,11 @@ export default function Dashboard() {
     });
 
     // Get thread details when email is selected
-    const { threadDetail, isLoading: isLoadingThread } = useThreadDetail(selectedEmail?.id || "");
+    const { threadDetail, isLoading: isLoadingThread } = useThreadDetail(
+        selectedEmail?.id || "",
+        !!selectedEmail
+    );
+    console.log("🚀 ~ Dashboard ~ isLoadingThread:", isLoadingThread);
 
     // Update thread messages when thread data is fetched
     useEffect(() => {
