@@ -30,6 +30,13 @@ import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import type { EmailMessage } from "@/services/mailboxes";
 import { useGetThreadDetailQuery } from "@/services/mailboxes/api";
 import type { ThreadMessage } from "@/services/mailboxes/types";
+import {
+    useBatchDeleteEmailsMutation,
+    useStarEmailMutation,
+    useUnstarEmailMutation,
+    useMarkAsReadMutation,
+    useMarkAsUnreadMutation,
+} from "@/services/email";
 
 // Icon mapping for mailbox IDs
 const mailboxIcons: Record<string, React.ReactNode> = {
@@ -48,6 +55,13 @@ export default function Dashboard() {
         error: mailboxesError,
         refetch: refetchMailboxes,
     } = useMailboxes();
+
+    // Email operation mutations
+    const [batchDeleteEmails] = useBatchDeleteEmailsMutation();
+    const [starEmail] = useStarEmailMutation();
+    const [unstarEmail] = useUnstarEmailMutation();
+    const [markAsRead] = useMarkAsReadMutation();
+    const [markAsUnread] = useMarkAsUnreadMutation();
 
     const [folders, setFolders] = useState<Folder[]>([]);
     const [selectedFolder, setSelectedFolder] = useState("INBOX");
@@ -78,12 +92,13 @@ export default function Dashboard() {
     });
 
     // Get thread details when email is selected
-    const { data: threadDetail, isLoading: isLoadingThread } = useGetThreadDetailQuery(
-        selectedEmail?.threadId || "",
-        {
-            skip: !selectedEmail,
-        }
-    );
+    const {
+        data: threadDetail,
+        isLoading: isLoadingThread,
+        refetch: refetchThread,
+    } = useGetThreadDetailQuery(selectedEmail?.threadId || "", {
+        skip: !selectedEmail,
+    });
 
     // Update thread messages when thread data is fetched
     useEffect(() => {
@@ -126,8 +141,47 @@ export default function Dashboard() {
     };
 
     const handleToggleStar = (emailId: string) => {
+        const email = emails.find((e) => e.id === emailId);
+        if (!email) return;
+
+        // Optimistic update - update selectedEmail immediately
         if (selectedEmail?.id === emailId) {
             setSelectedEmail({ ...selectedEmail, isStarred: !selectedEmail.isStarred });
+        }
+
+        // Call API
+        if (email.isStarred) {
+            unstarEmail(emailId)
+                .unwrap()
+                .then(() => {
+                    refetchEmails();
+                    if (selectedEmail) {
+                        refetchThread();
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error unstarring email:", error);
+                    // Revert optimistic update on error
+                    if (selectedEmail?.id === emailId) {
+                        setSelectedEmail({ ...selectedEmail, isStarred: true });
+                    }
+                });
+        } else {
+            starEmail(emailId)
+                .unwrap()
+                .then(() => {
+                    refetchEmails();
+                    if (selectedEmail) {
+                        refetchThread();
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error starring email:", error);
+                    // Revert optimistic update on error
+                    if (selectedEmail?.id === emailId) {
+                        setSelectedEmail({ ...selectedEmail, isStarred: false });
+                    }
+                });
         }
     };
 
@@ -150,19 +204,91 @@ export default function Dashboard() {
     };
 
     const handleMarkAsRead = () => {
-        // TODO: Implement marking emails as read via API
+        const emailIds = Array.from(selectedEmailIds);
+        if (emailIds.length === 0) return;
+
+        // Optimistic update - update selectedEmail if it's in the selection
+        if (selectedEmail && emailIds.includes(selectedEmail.id)) {
+            setSelectedEmail({ ...selectedEmail, isUnread: false });
+        }
+
+        let completed = 0;
+        // Call mark as read for each email
+        emailIds.forEach((emailId) => {
+            markAsRead(emailId)
+                .unwrap()
+                .then(() => {
+                    completed++;
+                    if (completed === emailIds.length) {
+                        refetchEmails();
+                        if (selectedEmail) {
+                            refetchThread();
+                        }
+                    }
+                })
+                .catch((error) => {
+                    console.error(`Error marking email ${emailId} as read:`, error);
+                    // Revert optimistic update on error
+                    if (selectedEmail?.id === emailId) {
+                        setSelectedEmail({ ...selectedEmail, isUnread: true });
+                    }
+                });
+        });
+
+        setSelectedEmailIds(new Set());
     };
 
     const handleMarkAsUnread = () => {
-        // TODO: Implement marking emails as unread via API
+        const emailIds = Array.from(selectedEmailIds);
+        if (emailIds.length === 0) return;
+
+        // Optimistic update - update selectedEmail if it's in the selection
+        if (selectedEmail && emailIds.includes(selectedEmail.id)) {
+            setSelectedEmail({ ...selectedEmail, isUnread: true });
+        }
+
+        let completed = 0;
+        // Call mark as unread for each email
+        emailIds.forEach((emailId) => {
+            markAsUnread(emailId)
+                .unwrap()
+                .then(() => {
+                    completed++;
+                    if (completed === emailIds.length) {
+                        refetchEmails();
+                        if (selectedEmail) {
+                            refetchThread();
+                        }
+                    }
+                })
+                .catch((error) => {
+                    console.error(`Error marking email ${emailId} as unread:`, error);
+                    // Revert optimistic update on error
+                    if (selectedEmail?.id === emailId) {
+                        setSelectedEmail({ ...selectedEmail, isUnread: false });
+                    }
+                });
+        });
+
+        setSelectedEmailIds(new Set());
     };
 
     const handleDelete = () => {
-        // TODO: Implement deleting emails via API
-        setSelectedEmailIds(new Set());
-        if (selectedEmail && selectedEmailIds.has(selectedEmail.id)) {
-            setSelectedEmail(null);
-        }
+        const emailIds = Array.from(selectedEmailIds);
+        if (emailIds.length === 0) return;
+
+        batchDeleteEmails({ ids: emailIds })
+            .unwrap()
+            .then(() => {
+                setSelectedEmailIds(new Set());
+                if (selectedEmail && selectedEmailIds.has(selectedEmail.id)) {
+                    setSelectedEmail(null);
+                }
+                refetchEmails();
+            })
+            .catch((error) => {
+                console.error("Error deleting emails:", error);
+            });
     };
 
     const handleKeyDown = (e: React.KeyboardEvent, email: EmailMessage) => {
@@ -569,6 +695,10 @@ export default function Dashboard() {
                                                     ? () => setShowMobileDetail(false)
                                                     : undefined
                                             }
+                                            onRefreshEmails={() => {
+                                                refetchEmails();
+                                                refetchThread();
+                                            }}
                                         />
                                     ))}
                                 </div>

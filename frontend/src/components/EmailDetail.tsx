@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect } from "react";
 import {
     Reply,
     ReplyAll,
@@ -14,39 +14,49 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDateLong } from "@/lib/utils";
 import type { ThreadMessage } from "@/services/mailboxes/types";
-import { useTheme } from "@/components/theme-provider";
 import DOMPurify from "dompurify";
+import {
+    useStarEmailMutation,
+    useUnstarEmailMutation,
+    useMarkAsReadMutation,
+    useMarkAsUnreadMutation,
+    useDeleteEmailMutation,
+} from "@/services/email";
 
 interface EmailDetailProps {
     message: ThreadMessage | null;
     onBack?: () => void;
-    onToggleStar?: (messageId: string) => void;
-    onMarkAsUnread?: (messageId: string) => void;
-    onDelete?: (messageId: string) => void;
+    onRefreshEmails?: () => void;
 }
 
-export function EmailDetail({
-    message,
-    onBack,
-    onToggleStar,
-    onMarkAsUnread,
-    onDelete,
-}: EmailDetailProps) {
-    const { theme } = useTheme();
+export function EmailDetail({ message, onBack, onRefreshEmails }: EmailDetailProps) {
+    // Email action mutations
+    const [starEmail] = useStarEmailMutation();
+    const [unstarEmail] = useUnstarEmailMutation();
+    const [markAsRead] = useMarkAsReadMutation();
+    const [markAsUnread] = useMarkAsUnreadMutation();
+    const [deleteEmail] = useDeleteEmailMutation();
 
-    // Sanitize HTML content using DOMPurify
-    const sanitizedHTML = useMemo(() => {
-        if (!message?.body.htmlBody) return "";
+    // Auto mark as read when email is opened if it's unread
+    useEffect(() => {
+        console.log(">>> isUnread:", message?.isUnread);
+        if (message && message.isUnread) {
+            markAsRead(message.id)
+                .unwrap()
+                .then(() => {
+                    if (onRefreshEmails) {
+                        onRefreshEmails();
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error marking email as read:", error);
+                });
+        }
+    }, [message?.id, message?.isUnread, markAsRead, onRefreshEmails]);
 
-        return DOMPurify.sanitize(message.body.htmlBody, {
-            ADD_TAGS: ["style"],
-            ADD_ATTR: ["target", "class", "style"],
-            ALLOWED_URI_REGEXP:
-                /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-        });
-    }, [message?.body.htmlBody]);
+    const displayMessage = message;
 
-    if (!message) {
+    if (!displayMessage) {
         return (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
@@ -56,6 +66,80 @@ export function EmailDetail({
             </div>
         );
     }
+
+    // Sanitize HTML content using DOMPurify
+    const sanitizedHTML = () => {
+        if (!message?.body.htmlBody) return "";
+
+        return DOMPurify.sanitize(message.body.htmlBody, {
+            ADD_TAGS: ["style"],
+            ADD_ATTR: ["target", "class", "style"],
+            ALLOWED_URI_REGEXP:
+                // eslint-disable-next-line no-useless-escape
+                /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+        });
+    };
+
+    const handleToggleStar = () => {
+        if (!message) return;
+
+        if (displayMessage.isStarred) {
+            unstarEmail(message.id)
+                .unwrap()
+                .then(() => {
+                    if (onRefreshEmails) {
+                        onRefreshEmails();
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error unstarring email:", error);
+                });
+        } else {
+            starEmail(message.id)
+                .unwrap()
+                .then(() => {
+                    if (onRefreshEmails) {
+                        onRefreshEmails();
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error starring email:", error);
+                });
+        }
+    };
+
+    const handleMarkAsUnread = () => {
+        if (!message) return;
+
+        markAsUnread(message.id)
+            .unwrap()
+            .then(() => {
+                if (onRefreshEmails) {
+                    onRefreshEmails();
+                }
+            })
+            .catch((error) => {
+                console.error("Error marking email as unread:", error);
+            });
+    };
+
+    const handleDelete = () => {
+        if (!message) return;
+
+        deleteEmail(message.id)
+            .unwrap()
+            .then(() => {
+                if (onRefreshEmails) {
+                    onRefreshEmails();
+                }
+                if (onBack) {
+                    onBack();
+                }
+            })
+            .catch((error) => {
+                console.error("Error deleting email:", error);
+            });
+    };
 
     return (
         <div className="flex flex-col h-full">
@@ -80,109 +164,104 @@ export function EmailDetail({
                             Forward
                         </Button>
                     </div>
-                    {onToggleStar && (
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="cursor-pointer"
-                            onClick={() => onToggleStar(message.id)}
-                        >
-                            <Star
-                                className={`w-5 h-5 ${
-                                    message.isStarred ? "fill-yellow-400 text-yellow-400" : ""
-                                }`}
-                            />
-                        </Button>
-                    )}
-                    {onMarkAsUnread && (
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="cursor-pointer"
-                            onClick={() => onMarkAsUnread(message.id)}
-                        >
-                            <Mail className="w-5 h-5" />
-                        </Button>
-                    )}
-                    {onDelete && (
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="cursor-pointer"
-                            onClick={() => onDelete(message.id)}
-                        >
-                            <Trash className="w-5 h-5 text-red-500" />
-                        </Button>
-                    )}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="cursor-pointer"
+                        onClick={handleToggleStar}
+                    >
+                        <Star
+                            className={`w-5 h-5 ${
+                                displayMessage.isStarred ? "fill-yellow-400 text-yellow-400" : ""
+                            }`}
+                        />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="cursor-pointer"
+                        onClick={handleMarkAsUnread}
+                    >
+                        <Mail className="w-5 h-5" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="cursor-pointer"
+                        onClick={handleDelete}
+                    >
+                        <Trash className="w-5 h-5 text-red-500" />
+                    </Button>
                 </div>
             </div>
 
             <ScrollArea className="flex-1 overflow-hidden max-w-full">
                 <div className="py-4 px-8">
-                    <h1 className="text-2xl font-bold mb-4">{message.headers.subject}</h1>
+                    <h1 className="text-2xl font-bold mb-4">{displayMessage.headers.subject}</h1>
 
                     <div className="space-y-2 mb-6 text-sm border-b pb-4">
                         <div className="flex gap-2">
                             <span className="text-muted-foreground w-16">From:</span>
-                            <span>{message.headers.from}</span>
+                            <span>{displayMessage.headers.from}</span>
                         </div>
                         <div className="flex gap-2">
                             <span className="text-muted-foreground w-16">To:</span>
-                            <span>{message.headers.to}</span>
+                            <span>{displayMessage.headers.to}</span>
                         </div>
                         <div className="flex gap-2">
                             <span className="text-muted-foreground w-16">Date:</span>
-                            <span>{formatDateLong(message.headers.date)}</span>
+                            <span>{formatDateLong(displayMessage.headers.date)}</span>
                         </div>
                     </div>
 
                     {/* Display HTML content directly with dangerouslySetInnerHTML */}
-                    {message.body.htmlBody ? (
+                    {displayMessage.body.htmlBody ? (
                         <div
                             className="email-content mb-6 overflow-x-auto"
-                            dangerouslySetInnerHTML={{ __html: sanitizedHTML }}
+                            dangerouslySetInnerHTML={{ __html: sanitizedHTML() }}
                         />
                     ) : (
                         <p className="whitespace-pre-wrap mb-6">
-                            {message.body.textBody || message.snippet}
+                            {displayMessage.body.textBody || displayMessage.snippet}
                         </p>
                     )}
 
                     {/* Attachments */}
-                    {message.body.attachments && message.body.attachments.length > 0 && (
-                        <div className="border-t pt-4">
-                            <h3 className="font-semibold mb-3">
-                                Attachments ({message.body.attachments.length})
-                            </h3>
-                            <div className="space-y-2">
-                                {message.body.attachments.map((attachment, idx) => (
-                                    <div
-                                        key={idx}
-                                        className="flex items-center justify-between p-3 bg-secondary border rounded-lg"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <FileText className="w-5 h-5 text-muted-foreground" />
-                                            <div>
-                                                <div className="font-medium">
-                                                    {attachment.filename}
-                                                </div>
-                                                <div className="text-sm text-muted-foreground">
-                                                    {(attachment.size / 1024).toFixed(2)} KB
+                    {displayMessage.body.attachments &&
+                        displayMessage.body.attachments.length > 0 && (
+                            <div className="border-t pt-4">
+                                <h3 className="font-semibold mb-3">
+                                    Attachments ({displayMessage.body.attachments.length})
+                                </h3>
+                                <div className="space-y-2">
+                                    {displayMessage.body.attachments.map((attachment, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="flex items-center justify-between p-3 bg-secondary border rounded-lg"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <FileText className="w-5 h-5 text-muted-foreground" />
+                                                <div>
+                                                    <div className="font-medium">
+                                                        {attachment.filename}
+                                                    </div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        {(attachment.size / 1024).toFixed(2)} KB
+                                                    </div>
                                                 </div>
                                             </div>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="cursor-pointer"
+                                            >
+                                                <Download className="w-4 h-4" />
+                                            </Button>
                                         </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="cursor-pointer"
-                                        >
-                                            <Download className="w-4 h-4" />
-                                        </Button>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
                 </div>
             </ScrollArea>
         </div>
