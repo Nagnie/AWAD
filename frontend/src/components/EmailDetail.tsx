@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import {
     Reply,
     ReplyAll,
@@ -13,54 +13,31 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { type Email } from "@/services/mail";
-import { mailApi } from "@/services/mail";
 import { formatDateLong } from "@/lib/utils";
+import type { ThreadMessage } from "@/services/mailboxes/types";
+import { useTheme } from "@/components/theme-provider";
 
 interface EmailDetailProps {
-    email: Email | null;
+    message: ThreadMessage | null;
     onBack?: () => void;
-    onToggleStar: (emailId: number) => void;
-    onMarkAsUnread: (email: Email) => void;
-    onDelete: (email: Email) => void;
+    onToggleStar?: (messageId: string) => void;
+    onMarkAsUnread?: (messageId: string) => void;
+    onDelete?: (messageId: string) => void;
 }
 
 export function EmailDetail({
-    email,
+    message,
     onBack,
     onToggleStar,
     onMarkAsUnread,
     onDelete,
 }: EmailDetailProps) {
-    const [fullEmail, setFullEmail] = useState<Email | null>(email);
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const { theme } = useTheme();
+    const [isIframeLoading, setIsIframeLoading] = useState(false);
+    console.log("🚀 ~ EmailDetail ~ isIframeLoading:", isIframeLoading);
+    const iframeRef = useRef<HTMLIFrameElement>(null);
 
-    useEffect(() => {
-        if (email && !fullEmail?.bodyHtml) {
-            loadFullEmail(email.id);
-        } else if (email?.id !== fullEmail?.id) {
-            setFullEmail(email);
-        }
-    }, [email?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const loadFullEmail = async (emailId: number) => {
-        try {
-            setIsLoading(true);
-            setError(null);
-            const fetchedEmail = await mailApi.getEmailById(emailId);
-            setFullEmail(fetchedEmail);
-        } catch (err) {
-            setError("Failed to load email details");
-            console.error("Error loading email:", err);
-            // Fallback to original email if API fails
-            setFullEmail(email);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    if (!fullEmail) {
+    if (!message) {
         return (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
@@ -94,97 +71,159 @@ export function EmailDetail({
                             Forward
                         </Button>
                     </div>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="cursor-pointer"
-                        onClick={() => onToggleStar(fullEmail.id)}
-                    >
-                        <Star
-                            className={`w-5 h-5 ${
-                                fullEmail.isStarred ? "fill-yellow-400 text-yellow-400" : ""
-                            }`}
-                        />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="cursor-pointer"
-                        onClick={() => onMarkAsUnread(fullEmail)}
-                    >
-                        <Mail className="w-5 h-5" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="cursor-pointer"
-                        onClick={() => onDelete(fullEmail)}
-                    >
-                        <Trash className="w-5 h-5 text-red-500" />
-                    </Button>
+                    {onToggleStar && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="cursor-pointer"
+                            onClick={() => onToggleStar(message.id)}
+                        >
+                            <Star
+                                className={`w-5 h-5 ${
+                                    message.isStarred ? "fill-yellow-400 text-yellow-400" : ""
+                                }`}
+                            />
+                        </Button>
+                    )}
+                    {onMarkAsUnread && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="cursor-pointer"
+                            onClick={() => onMarkAsUnread(message.id)}
+                        >
+                            <Mail className="w-5 h-5" />
+                        </Button>
+                    )}
+                    {onDelete && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="cursor-pointer"
+                            onClick={() => onDelete(message.id)}
+                        >
+                            <Trash className="w-5 h-5 text-red-500" />
+                        </Button>
+                    )}
                 </div>
             </div>
 
             <ScrollArea className="flex-1 overflow-hidden">
                 <div className="py-4 px-8">
-                    {isLoading && (
-                        <div className="flex items-center justify-center gap-2 text-muted-foreground mb-4">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Loading email...</span>
-                        </div>
-                    )}
-
-                    {error && (
-                        <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-800">
-                            {error}
-                        </div>
-                    )}
-
-                    <h1 className="text-2xl font-bold mb-4">{fullEmail.subject}</h1>
+                    <h1 className="text-2xl font-bold mb-4">{message.headers.subject}</h1>
 
                     <div className="space-y-2 mb-6 text-sm border-b pb-4">
                         <div className="flex gap-2">
                             <span className="text-muted-foreground w-16">From:</span>
-                            <span>{fullEmail.from}</span>
+                            <span>{message.headers.from}</span>
                         </div>
                         <div className="flex gap-2">
                             <span className="text-muted-foreground w-16">To:</span>
-                            <span>{fullEmail.to}</span>
+                            <span>{message.headers.to}</span>
                         </div>
-                        {fullEmail.cc && (
-                            <div className="flex gap-2">
-                                <span className="text-muted-foreground w-16">CC:</span>
-                                <span>{fullEmail.cc}</span>
-                            </div>
-                        )}
                         <div className="flex gap-2">
                             <span className="text-muted-foreground w-16">Date:</span>
-                            <span>{formatDateLong(fullEmail.timestamp)}</span>
+                            <span>{formatDateLong(message.headers.date)}</span>
                         </div>
                     </div>
 
-                    {/* Display HTML content if available, fallback to plain text */}
-                    <div className="prose prose-sm max-w-none mb-6">
-                        {fullEmail.bodyHtml ? (
-                            <div
-                                className="email-content break-words"
-                                dangerouslySetInnerHTML={{
-                                    __html: sanitizeHtml(fullEmail.bodyHtml),
+                    {/* Display HTML content in iframe if available, fallback to plain text */}
+                    {message.body.htmlBody ? (
+                        <div className="overflow-hidden mb-6">
+                            {isIframeLoading && (
+                                <div className="flex items-center justify-center p-8 gap-2 text-muted-foreground">
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Loading email content...</span>
+                                </div>
+                            )}
+                            <iframe
+                                ref={iframeRef}
+                                className={`w-full border-0 ${isIframeLoading ? "hidden" : ""}`}
+                                title="Email content"
+                                srcDoc={`<!DOCTYPE html>
+                                <html>
+                                <head>
+                                    <meta charset="UTF-8">
+                                    <base target="_blank">
+                                    <style>
+                                        body {
+                                            font-family: Arial, sans-serif;
+                                            font-size: 13px;
+                                            color: ${theme === "dark" ? "#FFFFFF" : "#000000"};
+                                            margin: 0;
+                                            overflow-y: hidden;
+                                            background-color: ${
+                                                theme === "dark" ? "#101828" : "white"
+                                            };
+                                        }
+                                        .gmail_quote_container {
+                                            margin-top: 20px;
+                                        }
+                                        .gmail_attr {
+                                            color: ${theme === "dark" ? "#AAAAAA" : "#666666"};
+                                            font-size: 12px;
+                                            margin-bottom: 8px;
+                                        }
+                                        .gmail_quote {
+                                            margin: 0px 0px 0px 0.8ex;
+                                            border-left: 1px solid rgb(204, 204, 204);
+                                            padding-left: 1ex;
+                                            color: ${theme === "dark" ? "#AAAAAA" : "#666666"};
+                                        }
+                                        blockquote {
+                                            margin: 0;
+                                            padding-left: 1ex;
+                                            border-left: 1px solid #ccc;
+                                            color: ${theme === "dark" ? "#AAAAAA" : "#666666"};
+                                        }
+                                        img {
+                                            max-width: 100%;
+                                            height: auto;
+                                        }
+                                        a {
+                                            color: #1155cc;
+                                            text-decoration: none;
+                                        }
+                                        a:hover {
+                                            text-decoration: underline;
+                                        }
+                                    </style>
+                                </head>
+                                <body>
+                                    ${message.body.htmlBody}
+                                </body>
+                                </html>`}
+                                sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox"
+                                onLoad={(e) => {
+                                    const iframe = e.currentTarget;
+                                    try {
+                                        const height =
+                                            iframe.contentDocument?.documentElement.scrollHeight;
+                                        if (height) {
+                                            iframe.style.height = height + "px";
+                                        }
+                                    } catch (err) {
+                                        console.error("Error calculating iframe height:", err);
+                                    }
+                                    setIsIframeLoading(false);
                                 }}
+                                onLoadStart={() => setIsIframeLoading(true)}
                             />
-                        ) : (
-                            <p className="whitespace-pre-wrap">{fullEmail.body}</p>
-                        )}
-                    </div>
+                        </div>
+                    ) : (
+                        <p className="whitespace-pre-wrap mb-6">
+                            {message.body.textBody || message.snippet}
+                        </p>
+                    )}
 
                     {/* Attachments */}
-                    {fullEmail.attachments && fullEmail.attachments.length > 0 && (
+                    {message.body.attachments && message.body.attachments.length > 0 && (
                         <div className="border-t pt-4">
                             <h3 className="font-semibold mb-3">
-                                Attachments ({fullEmail.attachments.length})
+                                Attachments ({message.body.attachments.length})
                             </h3>
                             <div className="space-y-2">
-                                {fullEmail.attachments.map((attachment, idx) => (
+                                {message.body.attachments.map((attachment, idx) => (
                                     <div
                                         key={idx}
                                         className="flex items-center justify-between p-3 bg-secondary border rounded-lg"
@@ -192,9 +231,11 @@ export function EmailDetail({
                                         <div className="flex items-center gap-3">
                                             <FileText className="w-5 h-5 text-muted-foreground" />
                                             <div>
-                                                <div className="font-medium">{attachment.name}</div>
+                                                <div className="font-medium">
+                                                    {attachment.filename}
+                                                </div>
                                                 <div className="text-sm text-muted-foreground">
-                                                    {attachment.size}
+                                                    {(attachment.size / 1024).toFixed(2)} KB
                                                 </div>
                                             </div>
                                         </div>
@@ -214,17 +255,4 @@ export function EmailDetail({
             </ScrollArea>
         </div>
     );
-}
-
-// Simple HTML sanitization to prevent XSS attacks
-function sanitizeHtml(html: string): string {
-    const div = document.createElement("div");
-    // Remove script tags and event handlers
-    const cleaned = html
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-        .replace(/on\w+\s*=\s*["'][^"']*["']/gi, "")
-        .replace(/on\w+\s*=\s*[^\s>]*/gi, "");
-
-    div.innerHTML = cleaned;
-    return div.innerHTML;
 }

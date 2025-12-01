@@ -17,6 +17,50 @@ export interface EmailHeader {
     date: string;
 }
 
+export interface Attachment {
+    filename: string;
+    mimeType: string;
+    size: number;
+    attachmentId: string;
+}
+
+export interface EmailBody {
+    htmlBody?: string;
+    textBody?: string;
+    attachments?: Attachment[];
+}
+
+export interface MessageHeaders {
+    subject: string;
+    from: string;
+    to: string;
+    date: string;
+    messageId?: string;
+    references?: string;
+    inReplyTo?: string;
+}
+
+export interface ThreadMessage {
+    id: string;
+    threadId: string;
+    labelIds: string[];
+    snippet: string;
+    headers: MessageHeaders;
+    body: EmailBody;
+    isUnread: boolean;
+    isStarred: boolean;
+    isImportant: boolean;
+    internalDate: string;
+    sizeEstimate: number;
+}
+
+export interface ThreadDetail {
+    id: string;
+    snippet: string;
+    historyId: string;
+    messages: ThreadMessage[];
+}
+
 export interface EmailMessage {
     id: string;
     threadId: string;

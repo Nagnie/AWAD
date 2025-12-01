@@ -12,6 +12,7 @@ import {
     X,
     Check,
     Loader2,
+    ChevronLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,10 +24,12 @@ import { Input } from "@/components/ui/input";
 import { type Folder } from "@/services/mail";
 import { useMailboxes } from "@/hooks/useMailboxes";
 import { useMailboxEmailsInfinite } from "@/hooks/useMailboxEmailsInfinite";
-// import { EmailDetail } from "@/components/EmailDetail";
+import { EmailDetail } from "@/components/EmailDetail";
 import { formatDateShort, formatMailboxName } from "@/lib/utils";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import type { EmailMessage } from "@/services/mailboxes";
+import { useGetThreadDetailQuery } from "@/services/mailboxes/api";
+import type { ThreadMessage } from "@/services/mailboxes/types";
 
 // Icon mapping for mailbox IDs
 const mailboxIcons: Record<string, React.ReactNode> = {
@@ -54,7 +57,7 @@ export default function Dashboard() {
     const [showMobileDetail, setShowMobileDetail] = useState(false);
     const [composeOpen, setComposeOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
-    const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+    const [threadMessages, setThreadMessages] = useState<ThreadMessage[]>([]);
 
     // Fetch emails from selected mailbox using RTK Query infinite query
     const {
@@ -73,6 +76,21 @@ export default function Dashboard() {
         isLoading: false,
         onLoadMore: loadNextPage,
     });
+
+    // Get thread details when email is selected
+    const { data: threadDetail, isLoading: isLoadingThread } = useGetThreadDetailQuery(
+        selectedEmail?.threadId || "",
+        {
+            skip: !selectedEmail,
+        }
+    );
+
+    // Update thread messages when thread data is fetched
+    useEffect(() => {
+        if (threadDetail?.messages) {
+            setThreadMessages(threadDetail.messages);
+        }
+    }, [threadDetail]);
 
     // Load mailboxes from RTK Query API
     useEffect(() => {
@@ -104,10 +122,7 @@ export default function Dashboard() {
 
     const handleEmailClick = (email: EmailMessage) => {
         setShowMobileDetail(true);
-        setIsLoadingDetail(true);
-        // For now, just set the email directly (can be extended to fetch full details)
         setSelectedEmail(email);
-        setIsLoadingDetail(false);
     };
 
     const handleToggleStar = (emailId: string) => {
@@ -520,14 +535,46 @@ export default function Dashboard() {
                     flex-col flex-1 lg:w-2/5 overflow-hidden
                     `}
                 >
-                    {isLoadingDetail ? (
+                    {isLoadingThread ? (
                         <div className="flex-1 flex items-center justify-center text-muted-foreground">
                             <div className="text-center">
                                 <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin opacity-50" />
-                                <p className="text-lg">Loading email...</p>
+                                <p className="text-lg">Loading thread...</p>
                             </div>
                         </div>
-                    ) : selectedEmail ? null : (
+                    ) : threadMessages.length > 0 ? (
+                        <div className="flex flex-col h-full">
+                            {/* Header with back button for mobile */}
+                            <div className="px-4 py-3 border-b lg:hidden">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowMobileDetail(false)}
+                                    className="cursor-pointer"
+                                >
+                                    <ChevronLeft className="w-4 h-4 mr-2" />
+                                    Back
+                                </Button>
+                            </div>
+
+                            {/* Messages list */}
+                            <ScrollArea className="flex-1 overflow-hidden">
+                                <div className="divide-y">
+                                    {threadMessages.map((message, index) => (
+                                        <EmailDetail
+                                            key={message.id}
+                                            message={message}
+                                            onBack={
+                                                index === 0
+                                                    ? () => setShowMobileDetail(false)
+                                                    : undefined
+                                            }
+                                        />
+                                    ))}
+                                </div>
+                            </ScrollArea>
+                        </div>
+                    ) : (
                         <div className="flex-1 flex items-center justify-center text-muted-foreground">
                             <div className="text-center">
                                 <Mail className="w-16 h-16 mx-auto mb-4 opacity-50" />
