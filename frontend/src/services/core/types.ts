@@ -1,7 +1,3 @@
-/**
- * Shared API type definitions
- */
-
 export interface ApiResponse<T> {
     status: "success" | "error";
     message: string;

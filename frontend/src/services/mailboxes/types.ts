@@ -1,7 +1,3 @@
-/**
- * Mailbox Types
- */
-
 export interface Mailbox {
     id: string;
     name: string;
@@ -14,12 +10,29 @@ export interface Mailbox {
     threadsUnread: number;
 }
 
-export interface MailboxesResponse {
-    status: "success" | "error";
-    message: string;
-    data: Mailbox[];
-    metadata: {
-        timestamp: string;
-        path: string;
-    };
+export interface EmailHeader {
+    subject: string;
+    from: string;
+    to: string;
+    date: string;
+}
+
+export interface EmailMessage {
+    id: string;
+    threadId: string;
+    labelIds: string[];
+    snippet: string;
+    sizeEstimate: number;
+    historyId: string;
+    internalDate: string;
+    header: EmailHeader;
+    isUnread: boolean;
+    isStarred: boolean;
+    isImportant: boolean;
+}
+
+export interface EmailsData {
+    nextPageToken?: string;
+    resultSizeEstimate: number;
+    emails: EmailMessage[];
 }

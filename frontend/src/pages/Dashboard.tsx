@@ -20,12 +20,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { type Email, type Folder } from "@/services/mail";
-import { mailApi } from "@/services/mail";
+import { type Folder } from "@/services/mail";
 import { useMailboxes } from "@/hooks/useMailboxes";
-import { EmailDetail } from "@/components/EmailDetail";
+import { useMailboxEmailsInfinite } from "@/hooks/useMailboxEmailsInfinite";
+// import { EmailDetail } from "@/components/EmailDetail";
 import { formatDateShort, formatMailboxName } from "@/lib/utils";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import type { EmailMessage } from "@/services/mailboxes";
 
 // Icon mapping for mailbox IDs
 const mailboxIcons: Record<string, React.ReactNode> = {
@@ -44,50 +45,34 @@ export default function Dashboard() {
         error: mailboxesError,
         refetch: refetchMailboxes,
     } = useMailboxes();
+
     const [folders, setFolders] = useState<Folder[]>([]);
     const [selectedFolder, setSelectedFolder] = useState("INBOX");
-    const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
-    const [emails, setEmails] = useState<Email[]>([]);
-    const [selectedEmailIds, setSelectedEmailIds] = useState<Set<number>>(new Set());
+    const [selectedEmail, setSelectedEmail] = useState<EmailMessage | null>(null);
+    const [selectedEmailIds, setSelectedEmailIds] = useState<Set<string>>(new Set());
     const [showMobileFolders, setShowMobileFolders] = useState(false);
     const [showMobileDetail, setShowMobileDetail] = useState(false);
     const [composeOpen, setComposeOpen] = useState(false);
-    const [offset, setOffset] = useState(0);
-    const [limit] = useState(5);
-    const [hasMore, setHasMore] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
     const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-    const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+    // Fetch emails from selected mailbox using RTK Query infinite query
+    const {
+        emails,
+        isLoading: isLoadingEmails,
+        isFetching: isFetchingEmails,
+        error: emailsError,
+        hasNextPage,
+        loadNextPage,
+        resetPagination,
+        refetch: refetchEmails,
+    } = useMailboxEmailsInfinite({ labelId: selectedFolder, q: searchQuery });
+
     const sentinelRef = useInfiniteScroll({
-        hasMore,
-        isLoading: isLoadingMore,
-        onLoadMore: handleLoadMore,
+        hasMore: hasNextPage,
+        isLoading: false,
+        onLoadMore: loadNextPage,
     });
-
-    function handleLoadMore() {
-        if (!hasMore || isLoadingMore || isLoading) return;
-        setIsLoadingMore(true);
-        const newOffset = offset + limit;
-        const loadMoreEmails = async () => {
-            try {
-                const result = await mailApi.getMailboxEmails(selectedFolder, {
-                    offset: newOffset,
-                    limit: limit,
-                    q: searchQuery,
-                });
-
-                setEmails((prevEmails) => [...prevEmails, ...result.items]);
-                setOffset(newOffset);
-                setHasMore(result.hasMore);
-            } catch (err) {
-                console.error("Error loading more emails:", err);
-            } finally {
-                setIsLoadingMore(false);
-            }
-        };
-        loadMoreEmails();
-    }
 
     // Load mailboxes from RTK Query API
     useEffect(() => {
@@ -112,70 +97,26 @@ export default function Dashboard() {
 
     // Reset emails when folder changes
     useEffect(() => {
-        setEmails([]);
-        setOffset(0);
-        setHasMore(true);
-    }, [selectedFolder]);
-
-    // Load initial emails from API
-    useEffect(() => {
-        const loadEmails = async () => {
-            setIsLoading(true);
-            try {
-                const result = await mailApi.getMailboxEmails(selectedFolder, {
-                    offset: 0,
-                    limit: limit,
-                    q: searchQuery,
-                });
-
-                setEmails(result.items);
-                setOffset(limit);
-                setHasMore(result.hasMore);
-            } catch (err) {
-                console.error("Error loading emails:", err);
-                setEmails([]);
-                setHasMore(false);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        loadEmails();
+        resetPagination();
         setSelectedEmail(null);
         setSelectedEmailIds(new Set());
-    }, [selectedFolder, searchQuery, limit]);
+    }, [selectedFolder, resetPagination]);
 
-    const handleEmailClick = (email: Email) => {
+    const handleEmailClick = (email: EmailMessage) => {
         setShowMobileDetail(true);
         setIsLoadingDetail(true);
-        // Fetch email detail from API
-        const fetchEmailDetail = async () => {
-            try {
-                const emailDetail = await mailApi.getEmailById(email.id);
-                setSelectedEmail(emailDetail);
-                // Mark as read if it's unread
-                if (!emailDetail.isRead) {
-                    setEmails(emails.map((e) => (e.id === email.id ? { ...e, isRead: true } : e)));
-                }
-            } catch (err) {
-                console.error("Error fetching email detail:", err);
-                // Fallback to the email from list
-                setSelectedEmail(email);
-            } finally {
-                setIsLoadingDetail(false);
-            }
-        };
-        fetchEmailDetail();
+        // For now, just set the email directly (can be extended to fetch full details)
+        setSelectedEmail(email);
+        setIsLoadingDetail(false);
     };
 
-    const handleToggleStar = (emailId: number) => {
-        setEmails(emails.map((e) => (e.id === emailId ? { ...e, isStarred: !e.isStarred } : e)));
+    const handleToggleStar = (emailId: string) => {
         if (selectedEmail?.id === emailId) {
             setSelectedEmail({ ...selectedEmail, isStarred: !selectedEmail.isStarred });
         }
     };
 
-    const handleSelectEmail = (emailId: number) => {
+    const handleSelectEmail = (emailId: string) => {
         const newSelected = new Set(selectedEmailIds);
         if (newSelected.has(emailId)) {
             newSelected.delete(emailId);
@@ -194,30 +135,31 @@ export default function Dashboard() {
     };
 
     const handleMarkAsRead = () => {
-        setEmails(emails.map((e) => (selectedEmailIds.has(e.id) ? { ...e, isRead: true } : e)));
+        // TODO: Implement marking emails as read via API
     };
 
     const handleMarkAsUnread = () => {
-        setEmails(emails.map((e) => (selectedEmailIds.has(e.id) ? { ...e, isRead: false } : e)));
-        if (selectedEmail) {
-            setSelectedEmail({ ...selectedEmail, isRead: false });
-        }
+        // TODO: Implement marking emails as unread via API
     };
 
     const handleDelete = () => {
-        setEmails(emails.filter((e) => !selectedEmailIds.has(e.id)));
+        // TODO: Implement deleting emails via API
         setSelectedEmailIds(new Set());
         if (selectedEmail && selectedEmailIds.has(selectedEmail.id)) {
             setSelectedEmail(null);
         }
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent, email: Email) => {
+    const handleKeyDown = (e: React.KeyboardEvent, email: EmailMessage) => {
         if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             handleEmailClick(email);
         }
     };
+
+    // Determine if we should show loading overlay
+    const showLoadingOverlay = isLoadingEmails || (isFetchingEmails && emails.length === 0);
+    console.log("🚀 ~ Dashboard ~ showLoadingOverlay:", showLoadingOverlay);
 
     return (
         <div className="h-[calc(100vh-64px)] flex flex-col">
@@ -332,7 +274,7 @@ export default function Dashboard() {
                 <div
                     className={`
                     ${showMobileDetail ? "hidden lg:flex" : "flex"}
-                    flex-col w-full lg:w-2/5 border-r overflow-hidden
+                    flex-col flex-1 lg:w-2/5 border-r overflow-hidden
                     `}
                 >
                     <div className="p-4 border-b space-y-3 shrink-0">
@@ -361,16 +303,15 @@ export default function Dashboard() {
                                 className="cursor-pointer"
                                 size="sm"
                                 onClick={() => {
-                                    setEmails([]);
-                                    setOffset(0);
-                                    setHasMore(true);
+                                    resetPagination();
+                                    refetchEmails();
                                     refetchMailboxes();
                                 }}
-                                disabled={isLoading || isLoadingMailboxes}
+                                disabled={isFetchingEmails || isLoadingMailboxes}
                             >
                                 <RefreshCw
                                     className={`w-4 h-4 ${
-                                        isLoading || isLoadingMailboxes ? "animate-spin" : ""
+                                        isFetchingEmails || isLoadingMailboxes ? "animate-spin" : ""
                                     }`}
                                 />
                             </Button>
@@ -379,6 +320,7 @@ export default function Dashboard() {
                                 size="sm"
                                 onClick={handleSelectAll}
                                 className="cursor-pointer"
+                                disabled={emails.length === 0}
                             >
                                 <Check className="w-4 h-4 mr-1" />
                                 {selectedEmailIds.size === emails.length
@@ -416,9 +358,46 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    <ScrollArea className="h-full w-full overflow-auto">
+                    <ScrollArea className="h-full w-full overflow-auto relative">
+                        {/* Loading Overlay */}
+                        {showLoadingOverlay && (
+                            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-2">
+                                    <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                                    <p className="text-sm text-muted-foreground">
+                                        Loading emails...
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="divide-y">
-                            {emails.length === 0 && !isLoading ? (
+                            {emailsError ? (
+                                <div className="p-4">
+                                    <div className="rounded-lg bg-destructive/10 p-4 border border-destructive/20">
+                                        <p className="text-sm text-destructive font-medium mb-2">
+                                            Failed to load emails
+                                        </p>
+                                        <p className="text-xs text-destructive/80 mb-3">
+                                            {typeof emailsError === "string"
+                                                ? emailsError
+                                                : "An error occurred while loading emails"}
+                                        </p>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                                resetPagination();
+                                                refetchEmails();
+                                            }}
+                                            className="cursor-pointer"
+                                        >
+                                            <RefreshCw className="w-3 h-3 mr-1" />
+                                            Retry
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : emails.length === 0 && !showLoadingOverlay ? (
                                 <div className="p-8 text-center text-muted-foreground">
                                     <Mail className="w-12 h-12 mx-auto mb-2 opacity-50" />
                                     <p>No emails in this folder</p>
@@ -432,7 +411,7 @@ export default function Dashboard() {
                                             onKeyDown={(e) => handleKeyDown(e, email)}
                                             tabIndex={0}
                                             role="button"
-                                            aria-label={`Email from ${email.from}: ${email.subject}`}
+                                            aria-label={`Email from ${email.header.from}: ${email.header.subject}`}
                                             className={`
                                                 p-4 cursor-pointer transition-colors
                                                 ${
@@ -442,7 +421,7 @@ export default function Dashboard() {
                                                 }
                                             `}
                                         >
-                                            <div className="flex items-start gap-3">
+                                            <div className="grid grid-cols-[auto_1fr_auto] gap-2 items-start">
                                                 <Checkbox
                                                     checked={selectedEmailIds.has(email.id)}
                                                     onCheckedChange={() =>
@@ -451,32 +430,32 @@ export default function Dashboard() {
                                                     onClick={(e) => e.stopPropagation()}
                                                     className="mt-1 bg-card"
                                                 />
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 mb-1">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
                                                         <span
-                                                            className={`flex-1 truncate ${
-                                                                !email.isRead
+                                                            className={`truncate ${
+                                                                email.isUnread
                                                                     ? "font-bold text-mail-foreground"
                                                                     : "font-semibold"
                                                             }`}
                                                         >
-                                                            {email.from.split("<")[0].trim()}
+                                                            {email.header.from.split("<")[0].trim()}
                                                         </span>
                                                         <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                                            {formatDateShort(email.timestamp)}
+                                                            {formatDateShort(email.header.date)}
                                                         </span>
                                                     </div>
                                                     <div
                                                         className={`text-sm truncate mb-1 ${
-                                                            !email.isRead
+                                                            email.isUnread
                                                                 ? "font-bold text-mail-foreground"
                                                                 : ""
                                                         }`}
                                                     >
-                                                        {email.subject}
+                                                        {email.header.subject}
                                                     </div>
-                                                    <div className="text-sm text-muted-foreground">
-                                                        {email.preview}
+                                                    <div className="text-sm text-muted-foreground line-clamp-1">
+                                                        {email.snippet}
                                                     </div>
                                                 </div>
                                                 <Button
@@ -485,7 +464,8 @@ export default function Dashboard() {
                                                         e.stopPropagation();
                                                         handleToggleStar(email.id);
                                                     }}
-                                                    className="mt-1 cursor-pointer"
+                                                    className="cursor-pointer"
+                                                    size="sm"
                                                 >
                                                     <Star
                                                         className={`w-4 h-4 ${
@@ -498,26 +478,29 @@ export default function Dashboard() {
                                             </div>
                                         </div>
                                     ))}
-                                    <div
-                                        ref={sentinelRef}
-                                        style={{
-                                            height: 32,
-                                        }}
-                                    ></div>
-                                    <div className="p-4 text-center text-muted-foreground">
-                                        {isLoadingMore && (
-                                            <div className="flex items-center justify-center gap-2">
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                <span>Loading more emails...</span>
-                                            </div>
-                                        )}
-                                        {!hasMore && emails.length > 0 && (
-                                            <p className="text-sm">No more emails to load</p>
-                                        )}
-                                    </div>
                                 </>
                             )}
                         </div>
+                        {/* Loading/End pagination indicators - outside divide-y for proper centering */}
+                        <div
+                            ref={sentinelRef}
+                            style={{
+                                height: 32,
+                            }}
+                        ></div>
+                        {isFetchingEmails && emails.length > 0 && !showLoadingOverlay && (
+                            <div className="w-full p-4 text-center text-muted-foreground border-t">
+                                <div className="flex items-center justify-center gap-2">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span>Loading more emails...</span>
+                                </div>
+                            </div>
+                        )}
+                        {!hasNextPage && emails.length > 0 && !showLoadingOverlay && (
+                            <div className="w-full p-4 text-center text-muted-foreground border-t">
+                                <p className="text-sm">No more emails to load</p>
+                            </div>
+                        )}
                     </ScrollArea>
                 </div>
 
@@ -525,7 +508,7 @@ export default function Dashboard() {
                 <div
                     className={`
                     ${showMobileDetail ? "flex" : "hidden lg:flex"}
-                    flex-col w-full lg:w-2/5 overflow-hidden
+                    flex-col flex-1 lg:w-2/5 overflow-hidden
                     `}
                 >
                     {isLoadingDetail ? (
@@ -535,25 +518,7 @@ export default function Dashboard() {
                                 <p className="text-lg">Loading email...</p>
                             </div>
                         </div>
-                    ) : selectedEmail ? (
-                        <EmailDetail
-                            email={selectedEmail}
-                            onBack={() => setShowMobileDetail(false)}
-                            onToggleStar={handleToggleStar}
-                            onMarkAsUnread={(email) => {
-                                setEmails(
-                                    emails.map((e) =>
-                                        e.id === email.id ? { ...e, isRead: false } : e
-                                    )
-                                );
-                                setSelectedEmail({ ...email, isRead: false });
-                            }}
-                            onDelete={(email) => {
-                                setEmails(emails.filter((e) => e.id !== email.id));
-                                setSelectedEmail(null);
-                            }}
-                        />
-                    ) : (
+                    ) : selectedEmail ? null : (
                         <div className="flex-1 flex items-center justify-center text-muted-foreground">
                             <div className="text-center">
                                 <Mail className="w-16 h-16 mx-auto mb-4 opacity-50" />

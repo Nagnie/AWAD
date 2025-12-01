@@ -27,5 +27,5 @@ export { mailApi } from "./mail";
 export type { Email, Mailbox, Folder, EmailsResponse } from "./mail";
 
 // Mailboxes
-export { mailboxesApi, useGetMailboxesQuery } from "./mailboxes";
-export type { Mailbox as MailboxData, MailboxesResponse } from "./mailboxes";
+export { mailboxesApi, useGetMailboxesQuery, useGetMailboxEmailsQuery } from "./mailboxes";
+export type { Mailbox as MailboxData, EmailMessage, EmailHeader, EmailsData } from "./mailboxes";
