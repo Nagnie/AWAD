@@ -61,8 +61,12 @@ export default function ComposeEmail({ onClose, mode, replyTo }: ComposeEmailPro
             if (bcc) formData.append('bcc', JSON.stringify(bcc.split(',').map(email => email.trim())));
             formData.append('subject', subject);
             formData.append('textBody', body);
+            // also include htmlBody for compose (convert newlines to <br>)
+            const composeHtml = body ? body.replace(/\n/g, '<br/>') : '';
+            if (composeHtml) formData.append('htmlBody', composeHtml);
             if (replyTo?.threadId) formData.append('threadId', replyTo.threadId);
             files.forEach((file) => formData.append('files', file));
+            console.log("🚀 ~ handleSend ~ formData:", [...formData.entries()]);
 
             sendEmail(formData, {
                 onSuccess: () => onClose(),
@@ -81,7 +85,14 @@ export default function ComposeEmail({ onClose, mode, replyTo }: ComposeEmailPro
 
             if (cc) formData.append('cc', JSON.stringify(cc.split(',').map(email => email.trim())));
             if (bcc) formData.append('bcc', JSON.stringify(bcc.split(',').map(email => email.trim())));
-            formData.append('textBody', body);
+            // Build HTML body: convert user's plain text to HTML and append original message (also convert original text to HTML)
+            const userHtml = trimmedBody ? trimmedBody.replace(/\n/g, '<br/>') : '';
+            const combinedHtml = userHtml ? `${userHtml}<br/><br/>` : '';
+
+            // For replies/forwards send htmlBody. Do not include subject for reply/reply_all (handled above: only forward keeps subject)
+            formData.append('htmlBody', combinedHtml || '');
+            console.log("🚀 ~ handleSend ~ htmlBody:", combinedHtml);
+            console.log("🚀 ~ handleSend ~ formData:", [...formData.entries()]);
             files.forEach((file) => formData.append('files', file));
 
             replyForwardEmail(
@@ -123,6 +134,7 @@ export default function ComposeEmail({ onClose, mode, replyTo }: ComposeEmailPro
                             }}
                             placeholder="recipient@example.com"
                             className="flex-1"
+                            disabled={mode === 'reply'}
                         />
                         {!showCc && (
                             <Button
@@ -174,15 +186,18 @@ export default function ComposeEmail({ onClose, mode, replyTo }: ComposeEmailPro
                         </div>
                     )}
 
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium w-12">Subject:</span>
-                        <Input
-                            value={subject}
-                            onChange={(e) => setSubject(e.target.value)}
-                            placeholder="Email subject"
-                            className="flex-1"
-                        />
-                    </div>
+                    {/* Hide subject input for reply/reply_all (no subject sent) */}
+                    {mode !== 'reply' && mode !== 'reply_all' && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium w-12">Subject:</span>
+                            <Input
+                                value={subject}
+                                onChange={(e) => setSubject(e.target.value)}
+                                placeholder="Email subject"
+                                className="flex-1"
+                            />
+                        </div>
+                    )}
                 </div>
 
                 <Textarea

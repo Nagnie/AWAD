@@ -115,8 +115,9 @@ export const untrashEmail = async (emailId: string): Promise<EmailMessage> => {
 export const sendEmail = async (emailData: FormData): Promise<EmailMessage> => {
     const client = apiClient.getClient();
     const response = await client.post<ApiResponse<EmailMessage>>(
-        `/api/v1/emails/send`,
-        emailData
+      `/api/v1/emails/send`,
+      emailData,
+      { headers: { "Content-Type": "multipart/form-data" } }
     );
     return response.data.data || ({} as EmailMessage);
 };
@@ -127,8 +128,9 @@ export const replyOrForwardEmail = async (
 ): Promise<EmailMessage> => {
     const client = apiClient.getClient();
     const response = await client.post<ApiResponse<EmailMessage>>(
-        `/api/v1/emails/${emailId}/reply`,
-        data
+      `/api/v1/emails/${emailId}/reply`,
+      data,
+      { headers: { "Content-Type": "multipart/form-data" } }
     );
     return response.data.data || ({} as EmailMessage);
 };

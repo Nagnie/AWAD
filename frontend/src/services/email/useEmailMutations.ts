@@ -560,8 +560,9 @@ export const useReplyForwardEmailMutation = () => {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: ({ emailId, data }: { emailId: string; data: FormData }) =>
-            replyOrForwardEmail(emailId, data),
+        mutationFn: ({ emailId, data }: { emailId: string; data: FormData }) => {
+            return replyOrForwardEmail(emailId, data);
+        },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['emails'] });
             queryClient.invalidateQueries({ queryKey: ['mailboxes'] });

@@ -1,8 +1,9 @@
-import { useQuery, useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
-import type { EmailsData } from "./types";
-import { mailboxesKeys } from "./queryKeys";
-import { fetchMailboxes, fetchMailboxEmails, fetchThreadDetail } from "./api";
+import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
+import { fetchMailboxEmails, fetchMailboxes, fetchThreadDetail } from "./api";
+import { mailboxesKeys } from "./queryKeys";
+
+import type { EmailsData } from "./types";
 // Query: Get all mailboxes
 export const useGetMailboxesQuery = () => {
     return useQuery({
@@ -44,14 +45,6 @@ export const useInfiniteQueryGetMailboxEmails = (labelId: string, q?: string) =>
 // Query: Get thread details
 export const useGetThreadDetailQuery = (threadId: string, enabled = true) => {
     const isEnabled = enabled && !!threadId;
-    console.log(
-        "🚀 ~ useGetThreadDetailQuery ~ threadId:",
-        threadId,
-        "enabled:",
-        enabled,
-        "isEnabled:",
-        isEnabled
-    );
     return useQuery({
         queryKey: mailboxesKeys.thread(threadId),
         queryFn: () => fetchThreadDetail(threadId),

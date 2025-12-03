@@ -1,41 +1,42 @@
-import React, { useState, useEffect } from "react";
 import {
-    Mail,
-    Star,
-    Send,
-    FileText,
-    Archive,
-    Trash,
-    Plus,
-    RefreshCw,
-    Menu,
-    Check,
-    Loader2,
-    ChevronLeft,
+  Archive,
+  Check,
+  ChevronLeft,
+  FileText,
+  Loader2,
+  Mail,
+  Menu,
+  Plus,
+  RefreshCw,
+  Send,
+  Star,
+  Trash,
 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+
+import ComposeEmail from "@/components/ComposeEmail";
+import { EmailDetail } from "@/components/EmailDetail";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { type Folder } from "@/services/mail";
-import { EmailDetail } from "@/components/EmailDetail";
-import { formatDateShort, formatMailboxName } from "@/lib/utils";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
-import { useMailboxes } from "@/hooks/useMailboxes";
 import { useMailboxEmails } from "@/hooks/useMailboxEmails";
+import { useMailboxes } from "@/hooks/useMailboxes";
 import { useThreadDetail } from "@/hooks/useThreadDetail";
-import type { EmailMessage } from "@/services/mailboxes";
+import { formatDateShort, formatMailboxName } from "@/lib/utils";
+import { type Folder } from "@/services/mail";
 import {
-    useBatchDeleteEmailsMutation,
-    useStarEmailMutation,
-    useUnstarEmailMutation,
-    useMarkAsReadMutation,
-    useMarkAsUnreadMutation,
+  useBatchDeleteEmailsMutation,
+  useMarkAsReadMutation,
+  useMarkAsUnreadMutation,
+  useStarEmailMutation,
+  useUnstarEmailMutation,
 } from "@/services/tanstack-query";
-import type { ThreadMessage } from "@/services/mailboxes/types";
-import ComposeEmail from "@/components/ComposeEmail";
 
+import type { EmailMessage } from "@/services/mailboxes";
+import type { ThreadMessage } from "@/services/mailboxes/types";
 // Icon mapping for mailbox IDs
 const mailboxIcons: Record<string, React.ReactNode> = {
     inbox: <Mail className="w-4 h-4" />,
@@ -97,7 +98,6 @@ export default function Dashboard() {
         selectedEmail?.id || "",
         !!selectedEmail
     );
-    console.log("🚀 ~ Dashboard ~ isLoadingThread:", isLoadingThread);
 
     // Update thread messages when thread data is fetched
     useEffect(() => {
