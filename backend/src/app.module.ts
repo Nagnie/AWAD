@@ -16,6 +16,7 @@ import { MailboxModule } from './mailbox/mailbox.module';
 import { EmailModule } from './email/email.module';
 import { AttachmentModule } from './attachment/attachment.module';
 import { ThreadModule } from './thread/thread.module';
+import { KanbanModule } from './kanban/kanban.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ThreadModule } from './thread/thread.module';
     EmailModule,
     AttachmentModule,
     ThreadModule,
+    KanbanModule,
   ],
   controllers: [AppController],
   providers: [
