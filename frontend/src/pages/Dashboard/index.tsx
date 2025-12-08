@@ -14,8 +14,8 @@ import {
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 
-import ComposeEmail from "@/components/ComposeEmail";
-import { EmailDetail } from "@/components/EmailDetail";
+import ComposeEmail from "@/pages/Dashboard/components/ComposeEmail";
+import { EmailDetail } from "@/pages/Dashboard/components/EmailDetail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
