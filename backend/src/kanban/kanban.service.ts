@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { KanbanColumnDto, KanbanColumnId } from './dto/kanban-column.dto';
 import { GetColumnQueryDto } from './dto/get-column.dto';
 import { GmailService } from '../gmail/gmail.service';
@@ -19,6 +23,21 @@ import {
   ReorderEmailsDto,
   ReorderEmailsResponseDto,
 } from './dto/reorder-email.dto';
+import { SnoozeEmailDto, SnoozeResponseDto } from './dto/snooze-email.dto';
+import { EmailSnooze } from '../email/entities/email-snooze.entity';
+import { SnoozeService } from '../snooze/snooze.service';
+import {
+  PinEmailDto,
+  PinResponseDto,
+  SetPriorityDto,
+} from 'src/kanban/dto/pin-email.dto';
+import {
+  BatchSummarizeDto,
+  BatchSummarizeResponseDto,
+  SummarizeEmailDto,
+  SummarizeResponseDto,
+  SummaryStatsDto,
+} from 'src/kanban/dto/summarize-email.dto';
 
 @Injectable()
 export class KanbanService {
@@ -33,6 +52,11 @@ export class KanbanService {
 
     @InjectRepository(EmailKanbanOrder)
     private readonly orderRepository: Repository<EmailKanbanOrder>,
+
+    @InjectRepository(EmailSnooze)
+    private readonly snoozeRepository: Repository<EmailSnooze>,
+
+    private readonly snoozeService: SnoozeService,
   ) {}
 
   getColumnsMetadata() {
@@ -259,29 +283,27 @@ export class KanbanService {
       removeLabelIds: uniqueRemoveLabels,
     });
 
-    if (moveDto.targetPosition !== undefined) {
-      await this.orderRepository.upsert(
-        {
-          userId,
-          emailId,
-          columnId: moveDto.targetColumn,
-          order: moveDto.targetPosition,
-        },
-        ['userId', 'emailId', 'columnId'],
-      );
+    await this.orderRepository.delete({
+      userId,
+      emailId,
+    });
 
+    const targetOrder = moveDto.targetPosition ?? 0;
+
+    await this.orderRepository.save({
+      userId,
+      emailId,
+      columnId: moveDto.targetColumn,
+      order: targetOrder,
+    });
+
+    if (moveDto.targetPosition !== undefined) {
       await this.shiftEmailPositions(
         userId,
         moveDto.targetColumn,
         moveDto.targetPosition,
         emailId,
       );
-    } else {
-      await this.orderRepository.delete({
-        userId,
-        emailId,
-        columnId: moveDto.sourceColumn,
-      });
     }
 
     return {
@@ -354,6 +376,329 @@ export class KanbanService {
       success: true,
       message: `Reordered ${reorderDto.emails.length} emails in ${reorderDto.columnId}`,
     };
+  }
+
+  async snoozeEmail(
+    userId: number,
+    emailId: string,
+    snoozeDto: SnoozeEmailDto,
+  ): Promise<SnoozeResponseDto> {
+    const email = await this.gmailService.getMessage(userId, emailId);
+
+    if (!email) {
+      throw new NotFoundException('Email not found');
+    }
+
+    const currentLabels = email.labelIds || [];
+    const originalColumn = await this.detectColumnFromLabels(
+      currentLabels,
+      userId,
+    );
+
+    const snoozeUntil = this.snoozeService.calculateSnoozeTime(
+      snoozeDto.preset,
+      snoozeDto.customDate,
+    );
+
+    const kanbanLabels = ['Kanban/To Do', 'Kanban/In Progress', 'Kanban/Done'];
+    const kanbanLabelIds = await this.gmailService.convertLabelNamesToIds(
+      userId,
+      kanbanLabels,
+    );
+
+    const addLabelIds =
+      (await this.gmailService.getLabelIdByName(userId, 'Kanban/Snoozed')) ||
+      '';
+
+    await this.gmailService.modifyMessage(userId, emailId, {
+      addLabelIds: [addLabelIds],
+      removeLabelIds: ['INBOX', ...kanbanLabelIds],
+    });
+
+    const snooze = this.snoozeRepository.create({
+      userId,
+      emailId,
+      threadId: email.threadId,
+      originalColumn,
+      snoozeUntil,
+      isRestored: false,
+    } as EmailSnooze);
+
+    const savedSnooze = await this.snoozeRepository.save(snooze);
+
+    await this.orderRepository.delete({
+      userId,
+      emailId,
+    });
+
+    const description = this.snoozeService.getSnoozeDescription(snoozeUntil);
+
+    return {
+      id: savedSnooze.id,
+      emailId: savedSnooze.emailId,
+      originalColumn: savedSnooze.originalColumn,
+      snoozeUntil: savedSnooze.snoozeUntil.toISOString(),
+      isRestored: false,
+      description,
+    };
+  }
+
+  async getSnoozedEmails(userId: number): Promise<SnoozeResponseDto[]> {
+    const snoozes = await this.snoozeService.findSnoozedEmails(userId);
+
+    return snoozes.map((snooze) => ({
+      id: snooze.id,
+      emailId: snooze.emailId,
+      originalColumn: snooze.originalColumn,
+      snoozeUntil: snooze.snoozeUntil.toISOString(),
+      isRestored: snooze.isRestored,
+      description: this.snoozeService.getSnoozeDescription(snooze.snoozeUntil),
+    }));
+  }
+
+  async unsnoozeEmail(
+    userId: number,
+    emailId: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    await this.snoozeService.unsnooze(userId, emailId);
+
+    return {
+      success: true,
+      message: `Email ${emailId} restored from snooze`,
+    };
+  }
+
+  async pinEmail(
+    userId: number,
+    emailId: string,
+    pinDto: PinEmailDto,
+  ): Promise<PinResponseDto> {
+    if (pinDto.columnId !== KanbanColumnId.INBOX) {
+      throw new BadRequestException(
+        'Pin feature currently only available for Inbox column',
+      );
+    }
+
+    const email = await this.gmailService.getMessage(userId, emailId);
+    if (!email) {
+      throw new NotFoundException('Email not found');
+    }
+
+    let pinnedOrder: number;
+
+    if (pinDto.position !== undefined) {
+      pinnedOrder = pinDto.position;
+
+      await this.shiftPinnedPositions(
+        userId,
+        pinDto.columnId,
+        pinDto.position,
+        emailId,
+      );
+    } else {
+      const maxOrder = await this.priorityRepository
+        .createQueryBuilder('priority')
+        .where('priority.userId = :userId', { userId })
+        .andWhere('priority.columnId = :columnId', {
+          columnId: pinDto.columnId,
+        })
+        .andWhere('priority.isPinned = true')
+        .select('MAX(priority.pinnedOrder)', 'maxOrder')
+        .getRawOne();
+
+      pinnedOrder = (maxOrder?.maxOrder ?? -1) + 1;
+    }
+
+    await this.priorityRepository.upsert(
+      {
+        userId,
+        emailId,
+        columnId: pinDto.columnId,
+        isPinned: true,
+        pinnedOrder,
+        priorityLevel: 0,
+      },
+      ['userId', 'emailId'],
+    );
+
+    return {
+      emailId,
+      isPinned: true,
+      pinnedOrder,
+      priorityLevel: 0,
+    };
+  }
+
+  async unpinEmail(
+    userId: number,
+    emailId: string,
+  ): Promise<{ success: boolean }> {
+    const priority = await this.priorityRepository.findOne({
+      where: {
+        userId,
+        emailId,
+        isPinned: true,
+      },
+    });
+
+    if (!priority) {
+      throw new NotFoundException('Email is not pinned');
+    }
+
+    if (priority.priorityLevel === 0) {
+      await this.priorityRepository.delete({ id: priority.id });
+    } else {
+      priority.isPinned = false;
+      priority.pinnedOrder = 0;
+      await this.priorityRepository.save(priority);
+    }
+
+    return { success: true };
+  }
+
+  async setPriority(
+    userId: number,
+    emailId: string,
+    priorityDto: SetPriorityDto,
+  ): Promise<PinResponseDto> {
+    if (priorityDto.priorityLevel < 0 || priorityDto.priorityLevel > 2) {
+      throw new BadRequestException('Priority level must be 0, 1, or 2');
+    }
+
+    let priority = await this.priorityRepository.findOne({
+      where: { userId, emailId },
+    });
+
+    if (priority) {
+      priority.priorityLevel = priorityDto.priorityLevel;
+      await this.priorityRepository.save(priority);
+    } else {
+      const email = await this.gmailService.getMessage(userId, emailId);
+      const columnId = await this.detectColumnFromLabels(
+        email.labelIds || [],
+        userId,
+      );
+
+      priority = await this.priorityRepository.save({
+        userId,
+        emailId,
+        columnId,
+        isPinned: false,
+        priorityLevel: priorityDto.priorityLevel,
+      });
+    }
+
+    return {
+      emailId,
+      isPinned: priority.isPinned,
+      pinnedOrder: priority.pinnedOrder ?? 0,
+      priorityLevel: priority.priorityLevel,
+    };
+  }
+
+  async summarizeEmail(
+    userId: number,
+    emailId: string,
+    options?: SummarizeEmailDto,
+  ): Promise<SummarizeResponseDto> {
+    if (!options?.forceRegenerate) {
+      const existing = await this.summaryRepository.findOne({
+        where: { userId, emailId },
+      });
+
+      if (existing) {
+        return {
+          emailId,
+          summary: existing.summary,
+          fromDatabase: true,
+          summarizedAt: existing.updatedAt.toISOString(),
+        };
+      }
+    }
+
+    const message = await this.gmailService.getMessage(userId, emailId);
+
+    if (!message) {
+      throw new NotFoundException('Email not found');
+    }
+
+    const parsed = parseEmailDetail(message);
+    // const emailBody =
+    //   parsed.body.textBody ||
+    //   parsed.body.htmlBody ||
+    //   parsed.snippet ||
+    //   'No content';
+
+    // TODO: add aiService to handle AI interactions
+    // const summary = await this.aiService.summarizeEmail(emailBody);
+    const summary = `[Simulated Summary] ${parsed.snippet.slice(0, 100)}...`;
+
+    const savedSummary = await this.summaryRepository.save({
+      userId,
+      emailId,
+      summary,
+    });
+
+    return {
+      emailId,
+      summary: savedSummary.summary,
+      fromDatabase: false,
+      summarizedAt: savedSummary.createdAt.toISOString(),
+    };
+  }
+
+  async batchSummarizeEmails(
+    userId: number,
+    batchDto: BatchSummarizeDto,
+  ): Promise<BatchSummarizeResponseDto> {
+    const results = await Promise.all(
+      batchDto.emailIds.map(async (emailId) => {
+        try {
+          const result = await this.summarizeEmail(userId, emailId);
+          return {
+            emailId,
+            success: true,
+            summary: result.summary,
+          };
+        } catch (error) {
+          return {
+            emailId,
+            success: false,
+            error: error.message,
+          };
+        }
+      }),
+    );
+
+    const success = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    return { success, failed, results };
+  }
+
+  async getSummaryStats(userId: number): Promise<SummaryStatsDto> {
+    const summaries = await this.summaryRepository.find({
+      where: { userId },
+      order: { createdAt: 'ASC' },
+    });
+
+    return {
+      totalSummaries: summaries.length,
+      oldestSummary: summaries[0]?.createdAt.toISOString() || null,
+      newestSummary:
+        summaries[summaries.length - 1]?.createdAt.toISOString() || null,
+    };
+  }
+
+  async deleteSummary(
+    userId: number,
+    emailId: string,
+  ): Promise<{ success: boolean }> {
+    await this.summaryRepository.delete({ userId, emailId });
+    return { success: true };
   }
 
   private async buildEmailCard(
@@ -521,6 +866,60 @@ export class KanbanService {
 
     if (updates.length > 0) {
       await this.orderRepository.save(updates);
+    }
+  }
+
+  private async detectColumnFromLabels(labelIds: string[], userId: number) {
+    const [
+      kanbanToDoLabelId,
+      kanbanInProgressLabelId,
+      kanbanDoneLabelId,
+      kanbanSnoozedLabelId,
+    ] = await Promise.all([
+      this.gmailService.getLabelIdByName(userId, 'Kanban/To Do'),
+      this.gmailService.getLabelIdByName(userId, 'Kanban/In Progress'),
+      this.gmailService.getLabelIdByName(userId, 'Kanban/Done'),
+      this.gmailService.getLabelIdByName(userId, 'Kanban/Snoozed'),
+    ]);
+
+    if (labelIds.includes(kanbanToDoLabelId || 'Kanban/To Do')) return 'todo';
+    if (labelIds.includes(kanbanInProgressLabelId || 'Kanban/In Progress'))
+      return 'in_progress';
+    if (labelIds.includes(kanbanDoneLabelId || 'Kanban/Done')) return 'done';
+    if (labelIds.includes(kanbanSnoozedLabelId || 'Kanban/Snoozed'))
+      return 'snoozed';
+
+    return 'inbox';
+  }
+
+  private async shiftPinnedPositions(
+    userId: number,
+    columnId: string,
+    insertPosition: number,
+    excludeEmailId: string,
+  ): Promise<void> {
+    const existingPinned = await this.priorityRepository.find({
+      where: {
+        userId,
+        columnId,
+        isPinned: true,
+      },
+      order: {
+        pinnedOrder: 'ASC',
+      },
+    });
+
+    const updates = existingPinned
+      .filter(
+        (p) => p.emailId !== excludeEmailId && p.pinnedOrder >= insertPosition,
+      )
+      .map((p) => ({
+        ...p,
+        pinnedOrder: p.pinnedOrder + 1,
+      }));
+
+    if (updates.length > 0) {
+      await this.priorityRepository.save(updates);
     }
   }
 }

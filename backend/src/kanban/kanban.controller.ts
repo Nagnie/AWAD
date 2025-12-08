@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -16,6 +18,12 @@ import { GetColumnQueryDto } from './dto/get-column.dto';
 import { MoveEmailDto } from './dto/move-email.dto';
 import { BatchMoveEmailDto } from './dto/batch-move-email.dto';
 import { ReorderEmailsDto } from './dto/reorder-email.dto';
+import { SnoozeEmailDto } from './dto/snooze-email.dto';
+import { PinEmailDto, SetPriorityDto } from 'src/kanban/dto/pin-email.dto';
+import {
+  BatchSummarizeDto,
+  SummarizeEmailDto,
+} from 'src/kanban/dto/summarize-email.dto';
 
 @Controller('emails/kanban')
 @UseGuards(AtGuard)
@@ -81,5 +89,122 @@ export class KanbanController {
   })
   async reorderEmails(@Req() req, @Body() reorderDto: ReorderEmailsDto) {
     return this.kanbanService.reorderEmails(req.user.sub, reorderDto);
+  }
+
+  @Post(':emailId/snooze')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Snooze an email',
+  })
+  @ApiParam({ name: 'emailId' })
+  async snoozeEmail(
+    @Req() req,
+    @Param('emailId') emailId: string,
+    @Body() snoozeDto: SnoozeEmailDto,
+  ) {
+    return this.kanbanService.snoozeEmail(req.user.sub, emailId, snoozeDto);
+  }
+
+  @Get('snoozed')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Get all snoozed emails',
+  })
+  async getSnoozedEmails(@Req() req) {
+    return this.kanbanService.getSnoozedEmails(req.user.sub);
+  }
+
+  @Post(':emailId/unsnooze')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Unsnooze an email',
+  })
+  @ApiParam({ name: 'emailId' })
+  async unsnoozeEmail(@Req() req, @Param('emailId') emailId: string) {
+    return this.kanbanService.unsnoozeEmail(req.user.sub, emailId);
+  }
+
+  @Post(':emailId/pin')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Pin email to top of Inbox',
+  })
+  @ApiParam({ name: 'emailId' })
+  async pinEmail(
+    @Req() req,
+    @Param('emailId') emailId: string,
+    @Body() pinDto: PinEmailDto,
+  ) {
+    return this.kanbanService.pinEmail(req.user.sub, emailId, pinDto);
+  }
+
+  @Delete(':emailId/pin')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Unpin email',
+  })
+  @ApiParam({ name: 'emailId' })
+  async unpinEmail(@Req() req, @Param('emailId') emailId: string) {
+    return this.kanbanService.unpinEmail(req.user.sub, emailId);
+  }
+
+  @Post(':emailId/priority')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Set email priority level',
+  })
+  @ApiParam({ name: 'emailId' })
+  async setPriority(
+    @Req() req,
+    @Param('emailId') emailId: string,
+    @Body() priorityDto: SetPriorityDto,
+  ) {
+    return this.kanbanService.setPriority(req.user.sub, emailId, priorityDto);
+  }
+
+  @Post(':emailId/summarize')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Generate AI summary for email',
+  })
+  @ApiParam({ name: 'emailId' })
+  async summarizeEmail(
+    @Req() req,
+    @Param('emailId') emailId: string,
+    @Body() dto: SummarizeEmailDto,
+  ) {
+    return this.kanbanService.summarizeEmail(req.user.sub, emailId, dto);
+  }
+
+  @Post('batch-summarize')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Batch summarize multiple emails',
+  })
+  async batchSummarize(@Req() req, @Body() dto: BatchSummarizeDto) {
+    if (dto.emailIds.length > 50) {
+      throw new BadRequestException('Maximum 50 emails per batch');
+    }
+
+    return this.kanbanService.batchSummarizeEmails(req.user.sub, dto);
+  }
+
+  @Get('summary-stats')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Get AI summary usage statistics',
+  })
+  async getSummaryStats(@Req() req) {
+    return this.kanbanService.getSummaryStats(req.user.sub);
+  }
+
+  @Delete(':emailId/summary')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Delete cached summary',
+  })
+  @ApiParam({ name: 'emailId' })
+  async deleteSummary(@Req() req, @Param('emailId') emailId: string) {
+    return this.kanbanService.deleteSummary(req.user.sub, emailId);
   }
 }

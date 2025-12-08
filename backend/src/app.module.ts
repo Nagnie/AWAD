@@ -15,6 +15,7 @@ import { AttachmentModule } from './attachment/attachment.module';
 import { ThreadModule } from './thread/thread.module';
 import { KanbanModule } from './kanban/kanban.module';
 import { CacheModule } from '@nestjs/cache-manager';
+import { SnoozeModule } from './snooze/snooze.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { CacheModule } from '@nestjs/cache-manager';
     AttachmentModule,
     ThreadModule,
     KanbanModule,
+    SnoozeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
