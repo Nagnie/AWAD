@@ -16,6 +16,7 @@ import { ThreadModule } from './thread/thread.module';
 import { KanbanModule } from './kanban/kanban.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { SnoozeModule } from './snooze/snooze.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { SnoozeModule } from './snooze/snooze.module';
       isGlobal: true,
       load: [databaseConfig, jwtConfig, googleOauthConfig],
     }),
+    ScheduleModule.forRoot(),
     // Cache Module (global)
     CacheModule.register({
       isGlobal: true, // Available in all modules

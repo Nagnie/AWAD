@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EmailSnooze } from '../email/entities/email-snooze.entity';
+import { EmailKanbanOrder } from '../email/entities/email-kanban-order.entity';
 import { LessThanOrEqual, Repository } from 'typeorm';
 import { GmailService } from '../gmail/gmail.service';
 import { SnoozePreset } from '../kanban/dto/snooze-email.dto';
@@ -14,6 +15,9 @@ export class SnoozeService {
   constructor(
     @InjectRepository(EmailSnooze)
     private readonly snoozeRepository: Repository<EmailSnooze>,
+
+    @InjectRepository(EmailKanbanOrder)
+    private readonly orderRepository: Repository<EmailKanbanOrder>,
 
     private readonly gmailService: GmailService,
   ) {}
@@ -160,6 +164,7 @@ export class SnoozeService {
     const restoreLabels: string[] = columnLabelMap[snooze.originalColumn] || [
       'INBOX',
     ];
+
     const restoreLabelIds = await this.gmailService.convertLabelNamesToIds(
       snooze.userId,
       restoreLabels,
@@ -174,6 +179,26 @@ export class SnoozeService {
     await this.gmailService.modifyMessage(snooze.userId, snooze.emailId, {
       addLabelIds: restoreLabelIds,
       removeLabelIds: [removeLabelIds],
+    });
+
+    // Get max order in target column
+    const maxOrderResult = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.userId = :userId', { userId: snooze.userId })
+      .andWhere('order.columnId = :columnId', {
+        columnId: snooze.originalColumn,
+      })
+      .select('MAX(order.order)', 'maxOrder')
+      .getRawOne();
+
+    const maxOrder = maxOrderResult?.maxOrder ?? -1;
+    const newOrder = maxOrder + 1;
+
+    await this.orderRepository.save({
+      userId: snooze.userId,
+      emailId: snooze.emailId,
+      columnId: snooze.originalColumn,
+      order: newOrder,
     });
   }
 
