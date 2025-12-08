@@ -14,6 +14,8 @@ import type {
     SummarizeResponseDto,
 } from "@/services/kanban/types";
 
+// Api call lấy thông tin của một cột Kanban cụ thể
+// sẽ call 4 api cho 4 cột: "inbox" | "todo" | "in_progress" | "done"
 export const getKanbanColumn = async (columnId: KanbanColumnId, query?: GetColumnQueryDto) => {
     const client = apiClient.getClient();
 
@@ -25,6 +27,7 @@ export const getKanbanColumn = async (columnId: KanbanColumnId, query?: GetColum
     return response.data.data;
 };
 
+// Api call di chuyển email từ cột này sang cột khác
 export const moveEmailToColumn = async (emailId: string, moveDto: MoveEmailDto) => {
     const client = apiClient.getClient();
 
@@ -36,6 +39,10 @@ export const moveEmailToColumn = async (emailId: string, moveDto: MoveEmailDto) 
     return response.data.data;
 };
 
+// có thể call hoặc không nếu không có thời gian
+// Api call sắp xếp lại thứ tự email trong cùng một cột (trừ cột "inbox" vì cột này sắp xếp theo thời gian nhận)
+// cần tính toán thứ tự mới của các email sau khi kéo thả và gửi lên server
+// phần order có hỗ trợ dàn float để dễ dàng chèn email vào giữa hai email khác nên không cần phải cập nhật lại toàn bộ thứ tự
 export const reorderEmailsInColumn = async (reorderDto: ReorderEmailsDto) => {
     const client = apiClient.getClient();
 
@@ -47,6 +54,12 @@ export const reorderEmailsInColumn = async (reorderDto: ReorderEmailsDto) => {
     return response.data.data;
 };
 
+// hiện tại ở backend đang cron job để tự động chuyển email từ cột "todo" sang "in_progress"
+// nên hiện tại ở frontend phải tự polling để lấy lại danh sách email của 4 cột
+// hoặc thêm 1 nút "Refresh" để người dùng tự cập nhật
+// hoặc call api lấy lại dữ liệu 4 cột khi focus vào page
+
+// Api call tạm ẩn email
 export const snoozeEmail = async (emailId: string, snoozeDto: SnoozeEmailDto) => {
     const client = apiClient.getClient();
 
@@ -58,6 +71,7 @@ export const snoozeEmail = async (emailId: string, snoozeDto: SnoozeEmailDto) =>
     return response.data.data;
 };
 
+// Api call lấy danh sách các email đã tạm ẩn
 export const getSnoozedEmails = async () => {
     const client = apiClient.getClient();
 
@@ -68,6 +82,7 @@ export const getSnoozedEmails = async () => {
     return response.data.data;
 };
 
+// Api call bỏ tạm ẩn email
 export const unsnoozeEmail = async (emailId: string) => {
     const client = apiClient.getClient();
 
@@ -104,6 +119,8 @@ export const unsnoozeEmail = async (emailId: string) => {
 //     return response.data.data;
 // };
 
+// Api call tóm tắt email
+// đang mock tạm thời, chưa có ai service
 export const summarizeEmail = async (emailId: string, dto: SummarizeEmailDto) => {
     const client = apiClient.getClient();
 
