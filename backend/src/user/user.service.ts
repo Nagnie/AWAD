@@ -11,27 +11,28 @@ export class UserService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-  ) {
+  ) {}
 
-  }
-
-  async findOrCreateUser(googleUser: oauth2_v2.Schema$Userinfo, encryptedGoogleRefreshToken: string): Promise<User> {
-    const user = await this.userRepository.findOne({ 
-        where: { email: googleUser.email || '' } 
+  async findOrCreateUser(
+    googleUser: oauth2_v2.Schema$Userinfo,
+    encryptedGoogleRefreshToken: string,
+  ): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { email: googleUser.email || '' },
     });
 
     if (user) {
-        user.googleRefreshToken = encryptedGoogleRefreshToken;
-        return this.userRepository.save(user);
+      user.googleRefreshToken = encryptedGoogleRefreshToken;
+      return this.userRepository.save(user);
     }
 
     const newUser: User = this.userRepository.create({
       email: googleUser.email,
       name: googleUser.name,
       googleId: googleUser.id,
-      googleRefreshToken: encryptedGoogleRefreshToken
+      googleRefreshToken: encryptedGoogleRefreshToken,
     } as User);
-    
+
     return await this.userRepository.save(newUser);
   }
 
@@ -55,7 +56,6 @@ export class UserService {
     user.hashedRefreshToken = null;
     await this.userRepository.save(user);
   }
-
 
   create(createUserDto: CreateUserDto) {
     return 'This action adds a new user';
