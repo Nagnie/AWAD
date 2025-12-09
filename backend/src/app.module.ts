@@ -16,12 +16,14 @@ import { MailboxModule } from './mailbox/mailbox.module';
 import { EmailModule } from './email/email.module';
 import { AttachmentModule } from './attachment/attachment.module';
 import { ThreadModule } from './thread/thread.module';
+import { OpenRouterModule } from './open-router/open-router.module';
+import openRouterConfig from './config/open-router.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, jwtConfig, googleOauthConfig],
+      load: [databaseConfig, jwtConfig, googleOauthConfig, openRouterConfig],
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -46,6 +48,7 @@ import { ThreadModule } from './thread/thread.module';
     EmailModule,
     AttachmentModule,
     ThreadModule,
+    OpenRouterModule,
   ],
   controllers: [AppController],
   providers: [
