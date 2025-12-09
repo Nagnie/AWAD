@@ -7,10 +7,10 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-@Entity('email_summaries')
-@Index(['userId', 'emailId'], { unique: true })
-@Index(['userId', 'createdAt'])
-export class EmailSummary {
+@Entity('email_kanban_orders')
+@Index(['userId', 'columnId', 'emailId'], { unique: true })
+@Index(['userId', 'columnId', 'order'])
+export class EmailKanbanOrder {
   @PrimaryGeneratedColumn()
   id: number;
 
@@ -20,8 +20,11 @@ export class EmailSummary {
   @Column()
   emailId: string;
 
-  @Column({ type: 'text' })
-  summary: string;
+  @Column()
+  columnId: string;
+
+  @Column({ type: 'float' })
+  order: number;
 
   @CreateDateColumn()
   createdAt: Date;

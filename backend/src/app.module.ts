@@ -9,21 +9,29 @@ import { GmailModule } from './gmail/gmail.module';
 import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import googleOauthConfig from './config/google-oauth.config';
-import { AtGuard } from './auth/guards/at.guard';
-import { APP_GUARD } from '@nestjs/core/constants';
-import { RtGuard } from './auth/guards/rt.guard';
 import { MailboxModule } from './mailbox/mailbox.module';
 import { EmailModule } from './email/email.module';
 import { AttachmentModule } from './attachment/attachment.module';
 import { ThreadModule } from './thread/thread.module';
 import { OpenRouterModule } from './open-router/open-router.module';
 import openRouterConfig from './config/open-router.config';
+import { KanbanModule } from './kanban/kanban.module';
+import { CacheModule } from '@nestjs/cache-manager';
+import { SnoozeModule } from './snooze/snooze.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       load: [databaseConfig, jwtConfig, googleOauthConfig, openRouterConfig],
+    }),
+    ScheduleModule.forRoot(),
+    // Cache Module (global)
+    CacheModule.register({
+      isGlobal: true, // Available in all modules
+      ttl: 3600, // 1 hour (in seconds)
+      max: 1000, // Max 1000 items in cache
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -49,10 +57,10 @@ import openRouterConfig from './config/open-router.config';
     AttachmentModule,
     ThreadModule,
     OpenRouterModule,
+    KanbanModule,
+    SnoozeModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService, 
-  ],
+  providers: [AppService],
 })
 export class AppModule {}
