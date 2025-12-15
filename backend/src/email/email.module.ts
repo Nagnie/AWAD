@@ -2,16 +2,23 @@ import { Module } from '@nestjs/common';
 import { EmailController } from './email.controller';
 import { EmailService } from './email.service';
 import { GmailModule } from '../gmail/gmail.module';
-import { EmailSynceService } from './email_sync.service';
+import { EmailSynceService } from './sync/email_sync.service';
 import { Email } from './entities/email.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { EmailSyncController } from './email_sync.controller';
 import { EmailSyncListener } from './listeners/email_sync.listener';
+import { EmailSyncController } from './sync/email_sync.controller';
+import { EmailSearchService } from './search/email_search.service';
+import { EmailSearchController } from './search/email_search.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Email]), GmailModule],
-  controllers: [EmailController, EmailSyncController],
-  providers: [EmailService, EmailSynceService, EmailSyncListener],
+  controllers: [EmailController, EmailSyncController, EmailSearchController],
+  providers: [
+    EmailService,
+    EmailSynceService,
+    EmailSearchService,
+    EmailSyncListener,
+  ],
   exports: [EmailService],
 })
 export class EmailModule {}

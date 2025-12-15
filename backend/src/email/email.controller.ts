@@ -13,13 +13,14 @@ import {
 } from '@nestjs/common';
 import { AtGuard } from '../auth/guards/at.guard';
 import { EmailService } from './email.service';
-import { EmailSynceService } from './email_sync.service';
+import { EmailSynceService } from './sync/email_sync.service';
 import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
   ApiResponse,
   ApiSecurity,
+  ApiTags,
 } from '@nestjs/swagger';
 import { ModifyEmailDto } from './dto/modify-email.dto';
 import { DeleteBatchEmailDto } from './dto/delete-batch-email.dto';
@@ -31,6 +32,7 @@ import { SendEmailSwaggerDto } from './dto/send-email-swagger.dto';
 import { parseBoolean, parseEmailArray } from '../utils/form-data-parser.util';
 
 @Controller('emails')
+@ApiTags('Emails')
 @UseGuards(AtGuard)
 export class EmailController {
   constructor(
