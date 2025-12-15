@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { GmailService } from 'src/gmail/gmail.service';
 import { In, Repository } from 'typeorm';
-import { Email } from './entities/email.entity';
+import { Email } from '../entities/email.entity';
 import { gmail_v1 } from 'googleapis';
-import { EmailSyncEvent } from './events/email_sync.event';
+import { EmailSyncEvent } from '../events/email_sync.event';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()

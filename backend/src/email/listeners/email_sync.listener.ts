@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent, EventEmitter2 } from '@nestjs/event-emitter';
 import { GmailService } from '../../gmail/gmail.service';
-import { EmailSynceService } from '../email_sync.service';
+import { EmailSynceService } from '../sync/email_sync.service';
 import { EmailSyncEvent } from '../events/email_sync.event';
 
 @Injectable()
