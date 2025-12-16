@@ -18,3 +18,27 @@ export interface BatchOperationResponse {
     modified?: number;
     deleted?: number;
 }
+
+export interface EmailSearchDto {
+    query?: string;
+    page?: number;
+    limit?: number;
+}
+
+export interface EmailSearchCard {
+    id: string;
+    subject: string;
+    sender: string;
+    snippet: string;
+    internalDate: string;
+    isRead: boolean;
+    summary: string;
+    relevance_score: number;
+}
+
+export interface EmailSearchResult {
+    data: EmailSearchCard[];
+    page: number;
+    limit: number;
+    totalResult: number;
+}

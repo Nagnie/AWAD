@@ -1,5 +1,6 @@
 import type { LoginFormData, SignupFormData } from "@/schemas/auth";
 import { authApi } from "@/services/auth";
+import { syncEmails } from "@/services/email/api";
 import { createAsyncThunk, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 interface User {
@@ -76,6 +77,9 @@ export const googleLogin = createAsyncThunk(
             // Lưu access token vào localStorage
             localStorage.setItem("accessToken", response.data.accessToken);
             localStorage.setItem("user", JSON.stringify(response.data.user));
+
+            // sync gmail emails after login
+            await syncEmails();
 
             return response.data;
         } catch (err: unknown) {

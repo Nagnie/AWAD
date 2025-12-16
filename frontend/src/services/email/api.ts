@@ -5,6 +5,8 @@ import type {
     BatchModifyEmailDto,
     ModifyEmailDto,
     BatchOperationResponse,
+    EmailSearchDto,
+    EmailSearchResult,
 } from "./types";
 import type { EmailMessage } from "@/services/mailboxes/types";
 
@@ -115,9 +117,9 @@ export const untrashEmail = async (emailId: string): Promise<EmailMessage> => {
 export const sendEmail = async (emailData: FormData): Promise<EmailMessage> => {
     const client = apiClient.getClient();
     const response = await client.post<ApiResponse<EmailMessage>>(
-      `/api/v1/emails/send`,
-      emailData,
-      { headers: { "Content-Type": "multipart/form-data" } }
+        `/api/v1/emails/send`,
+        emailData,
+        { headers: { "Content-Type": "multipart/form-data" } }
     );
     return response.data.data || ({} as EmailMessage);
 };
@@ -128,9 +130,28 @@ export const replyOrForwardEmail = async (
 ): Promise<EmailMessage> => {
     const client = apiClient.getClient();
     const response = await client.post<ApiResponse<EmailMessage>>(
-      `/api/v1/emails/${emailId}/reply`,
-      data,
-      { headers: { "Content-Type": "multipart/form-data" } }
+        `/api/v1/emails/${emailId}/reply`,
+        data,
+        { headers: { "Content-Type": "multipart/form-data" } }
     );
     return response.data.data || ({} as EmailMessage);
+};
+
+export const syncEmails = async () => {
+    const client = apiClient.getClient();
+
+    const response = await client.get<ApiResponse<unknown>>(`/api/v1/email/sync`);
+
+    return response.data;
+};
+
+export const searchEmails = async (data: EmailSearchDto) => {
+    const client = apiClient.getClient();
+
+    const response = await client.post<ApiResponse<EmailSearchResult>>(
+        `/api/v1/email/search`,
+        data
+    );
+
+    return response.data.data || { data: [], page: 1, limit: 0, totalResult: 0 };
 };
