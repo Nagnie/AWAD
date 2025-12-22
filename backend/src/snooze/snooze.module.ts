@@ -6,11 +6,16 @@ import { EmailSnooze } from '../email/entities/email-snooze.entity';
 import { SnoozeScheduler } from 'src/snooze/snooze.scheduler';
 import { EmailKanbanOrder } from 'src/email/entities/email-kanban-order.entity';
 import { SnoozeController } from './snooze.controller';
+import { KanbanColumnConfig } from 'src/kanban/entities/kanban-column-config.entity';
 
 @Module({
   imports: [
     GmailModule,
-    TypeOrmModule.forFeature([EmailSnooze, EmailKanbanOrder]),
+    TypeOrmModule.forFeature([
+      EmailSnooze,
+      EmailKanbanOrder,
+      KanbanColumnConfig,
+    ]),
   ],
   providers: [SnoozeService, SnoozeScheduler],
   exports: [SnoozeService],
