@@ -5,14 +5,21 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { AtGuard } from '../auth/guards/at.guard';
 import { KanbanService } from './kanban.service';
-import { ApiOperation, ApiParam, ApiSecurity } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiSecurity,
+} from '@nestjs/swagger';
 import { GetColumnQueryDto } from './dto/get-column.dto';
 import { MoveEmailDto } from './dto/move-email.dto';
 import { BatchMoveEmailDto } from './dto/batch-move-email.dto';
@@ -23,6 +30,13 @@ import {
   BatchSummarizeDto,
   SummarizeEmailDto,
 } from 'src/kanban/dto/summarize-email.dto';
+import {
+  AvailableLabelDto,
+  ColumnResponseDto,
+  ReorderColumnsDto,
+} from 'src/kanban/dto/column-management.dto';
+import { CreateColumnDto } from 'src/kanban/dto/create-column.dto';
+import { UpdateColumnDto } from 'src/kanban/dto/update-column.dto';
 
 @Controller('emails/kanban')
 @UseGuards(AtGuard)
@@ -35,8 +49,46 @@ export class KanbanController {
     summary: 'Get all column metadata',
     description: 'Get basic info about all Kanban columns (without emails)',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'User columns retrieved successfully',
+  })
   getColumnsMetadata(@Req() req) {
     return this.kanbanService.getUserColumns(req.user.sub);
+  }
+
+  @Get('labels/available')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Get available Gmail labels',
+    description: 'Get all Gmail labels that can be used for column assignment',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Available labels retrieved successfully',
+    type: [AvailableLabelDto],
+  })
+  async getAvailableLabels(@Req() req) {
+    return this.kanbanService.getAvailableLabels(req.user.sub);
+  }
+
+  @Post('columns')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Create new column',
+    description: 'Create a new Kanban column with Gmail label mapping',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Column created successfully',
+    type: ColumnResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation failed or column name already exists',
+  })
+  async createColumn(@Req() req, @Body() createColumnDto: CreateColumnDto) {
+    return this.kanbanService.createColumn(req.user.sub, createColumnDto);
   }
 
   @Get('columns/:columnId')
@@ -57,6 +109,92 @@ export class KanbanController {
     @Query() query: GetColumnQueryDto,
   ) {
     return this.kanbanService.getKanbanColumn(req.user.sub, columnId, query);
+  }
+
+  @Put('columns/:columnId')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Update existing column',
+    description: 'Update column name, color, or Gmail label mapping',
+  })
+  @ApiParam({
+    name: 'columnId',
+    description: 'Column database ID',
+    type: 'number',
+    example: 1,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Column updated successfully',
+    type: ColumnResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Column not found',
+  })
+  async updateColumn(
+    @Req() req,
+    @Param('columnId', ParseIntPipe) columnId: number,
+    @Body() updateColumnDto: UpdateColumnDto,
+  ) {
+    return this.kanbanService.updateColumn(
+      req.user.sub,
+      columnId,
+      updateColumnDto,
+    );
+  }
+
+  @Delete('columns/:columnId')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Delete column',
+    description: 'Soft delete a column (cannot delete if it contains emails)',
+  })
+  @ApiParam({
+    name: 'columnId',
+    description: 'Column database ID',
+    type: 'number',
+    example: 1,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Column deleted successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Cannot delete column (contains emails or is the last column)',
+  })
+  async deleteColumn(
+    @Req() req,
+    @Param('columnId', ParseIntPipe) columnId: number,
+  ) {
+    return this.kanbanService.deleteColumn(req.user.sub, columnId);
+  }
+
+  @Put('columns/reorder')
+  @ApiSecurity('jwt')
+  @ApiOperation({
+    summary: 'Reorder columns',
+    description: 'Update the display order of multiple columns',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Columns reordered successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+      },
+    },
+  })
+  async reorderColumns(@Req() req, @Body() reorderDto: ReorderColumnsDto) {
+    return this.kanbanService.reorderColumns(req.user.sub, reorderDto);
   }
 
   @Post(':emailId/move')

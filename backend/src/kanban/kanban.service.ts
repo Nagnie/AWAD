@@ -13,7 +13,7 @@ import {
   parseEmailDetail,
   prepareEmailToSummarize,
 } from '../utils/email.util';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { EmailPriority } from '../email/entities/email-priority.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EmailSummary } from '../email/entities/email-summary.entity';
@@ -45,6 +45,15 @@ import {
 } from 'src/kanban/dto/summarize-email.dto';
 import { EmailSummaryDto } from 'src/mailbox/dto/email-summary.dto';
 import { KanbanColumnConfig } from 'src/kanban/entities/kanban-column-config.entity';
+import { CreateColumnDto } from 'src/kanban/dto/create-column.dto';
+import {
+  AvailableLabelDto,
+  ColumnResponseDto,
+  ReorderColumnsDto,
+} from 'src/kanban/dto/column-management.dto';
+import { formatColumnsResponse, mapToColumnResponse } from 'src/kanban/mappers';
+import { UpdateColumnDto } from 'src/kanban/dto/update-column.dto';
+import { gmail_v1 } from 'googleapis';
 
 @Injectable()
 export class KanbanService {
@@ -72,47 +81,49 @@ export class KanbanService {
   ) {}
 
   async createDefaultColumns(userId: number): Promise<KanbanColumnConfig[]> {
+    const [toDoLabel, inProgressLabel, doneLabel, snoozedLabel] =
+      await Promise.all([
+        this.gmailService.getOrCreateLabel(userId, 'Kanban/To Do'),
+        this.gmailService.getOrCreateLabel(userId, 'Kanban/In Progress'),
+        this.gmailService.getOrCreateLabel(userId, 'Kanban/Done'),
+        this.gmailService.getOrCreateLabel(userId, 'Kanban/Snoozed'),
+      ]);
+
     const defaultColumns = [
       {
         name: 'Inbox',
         gmailLabel: 'INBOX',
         gmailLabelName: 'Inbox',
+        hasEmailSync: true,
         order: 0,
       },
       {
         name: 'To Do',
-        gmailLabel:
-          (await this.gmailService.getLabelIdByName(userId, 'Kanban/To Do')) ??
-          '',
+        gmailLabel: toDoLabel ?? '',
         gmailLabelName: 'Kanban/To Do',
+        hasEmailSync: true,
         order: 1,
       },
       {
         name: 'In Progress',
-        gmailLabel:
-          (await this.gmailService.getLabelIdByName(
-            userId,
-            'Kanban/In Progress',
-          )) ?? '',
+        gmailLabel: inProgressLabel ?? '',
         gmailLabelName: 'Kanban/In Progress',
+        hasEmailSync: true,
         order: 2,
       },
       {
         name: 'Done',
-        gmailLabel:
-          (await this.gmailService.getLabelIdByName(userId, 'Kanban/Done')) ??
-          '',
+        gmailLabel: doneLabel ?? '',
         gmailLabelName: 'Kanban/Done',
+        hasEmailSync: true,
         order: 3,
       },
       {
         name: 'Snoozed',
-        gmailLabel:
-          (await this.gmailService.getLabelIdByName(
-            userId,
-            'Kanban/Snoozed',
-          )) ?? '',
+        gmailLabel: snoozedLabel ?? '',
         gmailLabelName: 'Kanban/Snoozed',
+        hasEmailSync: true,
+        isActive: false,
         order: 4,
       },
     ];
@@ -144,36 +155,504 @@ export class KanbanService {
 
     if (userColumns.length === 0) {
       const defaultColumns = await this.createDefaultColumns(userId);
-      return this.formatColumnsResponse(defaultColumns);
+      return formatColumnsResponse(defaultColumns);
     }
 
-    return this.formatColumnsResponse(userColumns);
+    return formatColumnsResponse(userColumns);
   }
 
-  private formatColumnsResponse(columns: KanbanColumnConfig[]): {
-    columns: {
-      [key: number]: {
-        id: number;
-        name: string;
-        labelIds: string[];
-        order: number;
-        count: number;
-      };
-    };
-  } {
-    const formattedColumns: Record<number, any> = {};
+  async getAvailableLabels(userId: number): Promise<AvailableLabelDto[]> {
+    try {
+      const labels = await this.gmailService.listLabels_v2(userId);
 
-    columns.forEach((col) => {
-      formattedColumns[col.id] = {
-        id: col.id,
-        name: col.name,
-        labelIds: [col.gmailLabel],
-        order: col.order,
-        count: 0,
-      };
+      const formattedLabels: AvailableLabelDto[] = await Promise.all(
+        labels.map(async (label) => ({
+          id: label.id!,
+          name: label.name!,
+          type: this.getLabelType(label),
+          isKanbanLabel: this.isKanbanLabel(label.name!),
+          emailCount: await this.getEmailCountForLabel(userId, label.id!),
+        })),
+      );
+
+      return formattedLabels.sort((a, b) => {
+        // Sort:  system first, then user labels, then kanban labels
+        const typeOrder = { system: 0, user: 1, kanban: 2 };
+        return (
+          typeOrder[a.type] - typeOrder[b.type] || a.name.localeCompare(b.name)
+        );
+      });
+    } catch (error) {
+      console.error('Failed to get available labels:', error);
+      throw new BadRequestException('Failed to load available Gmail labels');
+    }
+  }
+
+  private getLabelType(
+    label: gmail_v1.Schema$Label,
+  ): 'system' | 'user' | 'kanban' {
+    if (label.type === 'system') return 'system';
+    if (this.isKanbanLabel(label.name!)) return 'kanban';
+    return 'user';
+  }
+
+  private isKanbanLabel(labelName: string | undefined): boolean {
+    return labelName?.startsWith('Kanban/') || false;
+  }
+
+  async createColumn(
+    userId: number,
+    createColumnDto: CreateColumnDto,
+  ): Promise<ColumnResponseDto> {
+    // Validate column name uniqueness
+    const existingColumn = await this.columnConfigRepository.findOne({
+      where: {
+        userId,
+        name: createColumnDto.name,
+        isActive: true,
+      },
     });
 
-    return { columns: formattedColumns };
+    if (existingColumn) {
+      throw new BadRequestException(
+        `Column with name "${createColumnDto.name}" already exists`,
+      );
+    }
+
+    let gmailLabelId: string | null = null;
+    let gmailLabelName: string | null = null;
+    let hasEmailSync: boolean = false;
+
+    // Handle label assignment
+    if (createColumnDto.labelOption && createColumnDto.labelOption !== 'none') {
+      try {
+        if (createColumnDto.labelOption === 'existing') {
+          gmailLabelId = createColumnDto.existingLabelId!;
+          gmailLabelName = createColumnDto.existingLabelName!;
+
+          // Verify label exists and user has access
+          const userLabels = await this.gmailService.listLabels_v2(userId);
+          const labelExists = userLabels.some(
+            (label) => label.id === gmailLabelId,
+          );
+
+          if (!labelExists) {
+            throw new BadRequestException(
+              'Selected Gmail label does not exist or is not accessible',
+            );
+          }
+
+          const existingColumnWithLabel =
+            await this.columnConfigRepository.findOne({
+              where: {
+                userId,
+                gmailLabel: createColumnDto.existingLabelId!,
+                isActive: true,
+              },
+            });
+
+          if (existingColumnWithLabel) {
+            throw new BadRequestException(
+              `Label "${createColumnDto.existingLabelName}" is already used by column "${existingColumnWithLabel.name}"`,
+            );
+          }
+
+          hasEmailSync = true;
+        } else if (createColumnDto.labelOption === 'new') {
+          // Create new label
+          const labelName =
+            createColumnDto.newLabelName || `Kanban/${createColumnDto.name}`;
+          gmailLabelName = labelName;
+
+          // Check if label already exists
+          if (
+            (await this.gmailService.labelExists(userId, labelName)) &&
+            !labelName.startsWith('Kanban/')
+          ) {
+            throw new BadRequestException(
+              `Gmail label "${labelName}" already exists`,
+            );
+          }
+
+          gmailLabelId = (await this.gmailService.getOrCreateLabel(
+            userId,
+            labelName,
+          )) as string;
+
+          console.log(
+            `Created new Gmail label: ${labelName} (${gmailLabelId})`,
+          );
+
+          hasEmailSync = true;
+        }
+      } catch (error) {
+        console.error('Failed to setup Gmail label:', error);
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+        throw new BadRequestException('Failed to setup Gmail label');
+      }
+    } else {
+      console.log(`Creating column without Gmail label mapping`);
+    }
+
+    // Get max order
+    const maxOrder = await this.columnConfigRepository
+      .createQueryBuilder('column')
+      .select('MAX(column.order)', 'maxOrder')
+      .where('column.user_id = :userId AND column.is_active = :isActive', {
+        userId,
+        isActive: true,
+      })
+      .getRawOne();
+
+    // Create column
+    const column = this.columnConfigRepository.create({
+      userId,
+      name: createColumnDto.name,
+      gmailLabel: gmailLabelId,
+      gmailLabelName: gmailLabelName,
+      order: (maxOrder?.maxOrder || 0) + 1,
+      hasEmailSync: hasEmailSync,
+    });
+
+    const savedColumn = await this.columnConfigRepository.save(column);
+
+    console.log(`Column created successfully: `, {
+      id: savedColumn.id,
+      name: savedColumn.name,
+      hasEmailSync: savedColumn.hasEmailSync,
+    });
+
+    return mapToColumnResponse(savedColumn);
+  }
+
+  private async validateGmailLabel(
+    userId: number,
+    labelId: string,
+  ): Promise<boolean> {
+    try {
+      const userLabels = await this.gmailService.listLabels_v2(userId);
+      return userLabels.some((label) => label.id === labelId);
+    } catch (error) {
+      console.error('Failed to validate Gmail label:', error);
+      return false;
+    }
+  }
+
+  private async convertColumnToLocalOnly(
+    userId: number,
+    columnConfig: KanbanColumnConfig,
+  ): Promise<void> {
+    try {
+      console.log(
+        `Converting column "${columnConfig.name}" to local-only mode`,
+      );
+
+      // Update column config
+      columnConfig.hasEmailSync = false;
+      columnConfig.gmailLabel = null;
+      columnConfig.gmailLabelName = null;
+
+      await this.columnConfigRepository.save(columnConfig);
+
+      console.log(
+        `Column "${columnConfig.name}" converted to local-only successfully`,
+      );
+    } catch (error) {
+      console.error('Failed to convert column to local-only:', error);
+    }
+  }
+
+  async updateColumn(
+    userId: number,
+    columnId: number,
+    updateColumnDto: UpdateColumnDto,
+  ): Promise<ColumnResponseDto> {
+    const column = await this.columnConfigRepository.findOne({
+      where: { id: columnId, userId, isActive: true },
+    });
+
+    if (!column) {
+      throw new NotFoundException('Column not found');
+    }
+
+    // Track original sync status for migration logic
+    const originalHasEmailSync = column.hasEmailSync;
+
+    // Update basic fields
+    if (updateColumnDto.name && updateColumnDto.name !== column.name) {
+      // Check name uniqueness
+      const existingColumn = await this.columnConfigRepository.findOne({
+        where: {
+          userId,
+          name: updateColumnDto.name,
+          isActive: true,
+          id: Not(columnId),
+        },
+      });
+
+      if (existingColumn) {
+        throw new BadRequestException(
+          `Column with name "${updateColumnDto.name}" already exists`,
+        );
+      }
+
+      column.name = updateColumnDto.name;
+    }
+
+    // Handle label changes
+    if (updateColumnDto.labelOption) {
+      if (updateColumnDto.labelOption === 'none') {
+        // Remove label mapping
+        console.log(
+          `Removing Gmail label mapping from column "${column.name}"`,
+        );
+        column.gmailLabel = null;
+        column.gmailLabelName = null;
+        column.hasEmailSync = false;
+      } else {
+        // Set or update label mapping
+        let newGmailLabelId: string;
+        let newGmailLabelName: string;
+
+        if (updateColumnDto.labelOption === 'existing') {
+          newGmailLabelId = updateColumnDto.existingLabelId!;
+          newGmailLabelName = updateColumnDto.existingLabelName!;
+
+          // Verify label exists
+          const userLabels = await this.gmailService.listLabels_v2(userId);
+          const labelExists = userLabels.some(
+            (label) => label.id === newGmailLabelId,
+          );
+
+          if (!labelExists) {
+            throw new BadRequestException(
+              'Selected Gmail label does not exist',
+            );
+          }
+
+          // Check if label is already used by another column
+          const existingColumnWithLabel =
+            await this.columnConfigRepository.findOne({
+              where: {
+                userId,
+                gmailLabel: newGmailLabelId,
+                isActive: true,
+                id: Not(columnId),
+              },
+            });
+
+          if (existingColumnWithLabel) {
+            throw new BadRequestException(
+              `Label "${newGmailLabelName}" is already used by column "${existingColumnWithLabel.name}"`,
+            );
+          }
+        } else {
+          // Create new label
+          const labelName =
+            updateColumnDto.newLabelName ||
+            `Kanban/${updateColumnDto.name || column.name}`;
+          newGmailLabelName = labelName;
+
+          if (
+            (await this.gmailService.labelExists(userId, labelName)) &&
+            !labelName.startsWith('Kanban/')
+          ) {
+            throw new BadRequestException(
+              `Gmail label "${labelName}" already exists`,
+            );
+          }
+
+          newGmailLabelId = (await this.gmailService.getOrCreateLabel(
+            userId,
+            labelName,
+          )) as string;
+          console.log(
+            `Created new Gmail label: ${labelName} (${newGmailLabelId})`,
+          );
+        }
+
+        // // Update label references
+        // if (column.gmailLabel !== newGmailLabelId) {
+        //   column.gmailLabel = newGmailLabelId;
+        //   column.gmailLabelName = newGmailLabelName;
+        //   column.hasEmailSync = true;
+        //   console.log(
+        //     `Updated Gmail label mapping: ${column.gmailLabel} → ${newGmailLabelId}`,
+        //   );
+        // }
+        // Update label references
+        column.gmailLabel = newGmailLabelId;
+        column.gmailLabelName = newGmailLabelName;
+        column.hasEmailSync = true;
+
+        console.log(`Updated Gmail label mapping for column "${column.name}"`);
+      }
+    }
+
+    // ONLY SYNC WHEN TRANSITIONING FROM NONE TO GMAIL LABEL
+    if (!originalHasEmailSync && column.hasEmailSync && column.gmailLabel) {
+      console.log(
+        `Syncing local emails to Gmail label for column "${column.name}" (first-time mapping)`,
+      );
+      await this.syncLocalEmailsToGmail(userId, columnId, column.gmailLabel);
+    }
+
+    const updatedColumn = await this.columnConfigRepository.save(column);
+    console.log(`Column updated successfully`);
+
+    return mapToColumnResponse(updatedColumn);
+  }
+
+  private async syncLocalEmailsToGmail(
+    userId: number,
+    columnId: number,
+    gmailLabelId: string,
+  ): Promise<void> {
+    try {
+      // Get all emails tracked locally for this column
+      const localEmails = await this.orderRepository.find({
+        where: { userId, columnId },
+        order: { order: 'ASC' },
+      });
+
+      if (localEmails.length === 0) {
+        console.log(`No local emails to sync for column ${columnId}`);
+        return;
+      }
+
+      console.log(
+        `Syncing ${localEmails.length} emails to Gmail label ${gmailLabelId}`,
+      );
+
+      // Apply Gmail label to all emails
+      const batchResults = await Promise.allSettled(
+        localEmails.map(async (emailOrder) => {
+          try {
+            await this.gmailService.modifyMessage(userId, emailOrder.emailId, {
+              addLabelIds: [gmailLabelId],
+              removeLabelIds: [], // 👈 Don't remove any labels, just add new one
+            });
+
+            return { emailId: emailOrder.emailId, success: true };
+          } catch (error) {
+            console.error(
+              `Failed to sync email ${emailOrder.emailId} to Gmail:`,
+              error,
+            );
+            return { emailId: emailOrder.emailId, success: false, error };
+          }
+        }),
+      );
+
+      const successful = batchResults.filter(
+        (result) => result.status === 'fulfilled' && result.value.success,
+      ).length;
+
+      const failed = batchResults.length - successful;
+
+      console.log(
+        `Gmail sync completed: ${successful} success, ${failed} failed`,
+      );
+    } catch (error) {
+      console.error('Failed to sync local emails to Gmail:', error);
+      throw new BadRequestException('Failed to sync emails to Gmail label');
+    }
+  }
+
+  async deleteColumn(
+    userId: number,
+    columnId: number,
+  ): Promise<{ success: boolean }> {
+    const column = await this.columnConfigRepository.findOne({
+      where: { id: columnId, userId, isActive: true },
+    });
+
+    if (!column) {
+      throw new NotFoundException('Column not found');
+    }
+
+    // Check if it's the last active column
+    const activeColumnsCount = await this.columnConfigRepository.count({
+      where: { userId, isActive: true },
+    });
+
+    if (activeColumnsCount <= 1) {
+      throw new BadRequestException(
+        'Cannot delete the last column.  You must have at least one active column.',
+      );
+    }
+
+    // Check if column has emails
+    if (column.hasEmailSync && column.gmailLabel) {
+      const emailCount = await this.getEmailCountForLabel(
+        userId,
+        column.gmailLabel,
+      );
+      if (emailCount > 0) {
+        throw new BadRequestException(
+          `Cannot delete column "${column.name}" because it contains ${emailCount} emails.  Please move or delete the emails first.`,
+        );
+      }
+    }
+
+    // Soft delete
+    column.isActive = false;
+    await this.columnConfigRepository.save(column);
+
+    // Clean up related records
+    await this.orderRepository.delete({ userId, columnId });
+
+    console.log(`Column deleted successfully`);
+    return { success: true };
+  }
+
+  private async getEmailCountForLabel(
+    userId: number,
+    labelName: string,
+  ): Promise<number> {
+    try {
+      const response = await this.gmailService.listMessages(
+        userId,
+        `label:${labelName}`,
+        undefined,
+        1,
+      );
+      return response.resultSizeEstimate || 0;
+    } catch (error) {
+      console.error(`Failed to get email count for label ${labelName}:`, error);
+      return 0;
+    }
+  }
+
+  async reorderColumns(
+    userId: number,
+    reorderColumnsDto: ReorderColumnsDto,
+  ): Promise<{ success: boolean }> {
+    // Validate all columns belong to user
+    const columnIds = reorderColumnsDto.columns.map((c) => c.id);
+    const userColumns = await this.columnConfigRepository.find({
+      where: { id: In(columnIds), userId, isActive: true },
+    });
+
+    if (userColumns.length !== columnIds.length) {
+      throw new BadRequestException(
+        'One or more columns not found or do not belong to user',
+      );
+    }
+
+    // Update orders
+    const updates = reorderColumnsDto.columns.map((columnOrder) => ({
+      id: columnOrder.id,
+      order: columnOrder.order,
+      userId,
+    }));
+
+    await this.columnConfigRepository.save(updates);
+
+    console.log(`Columns reordered successfully`);
+    return { success: true };
   }
 
   async getKanbanColumn(
@@ -189,8 +668,63 @@ export class KanbanService {
       throw new BadRequestException(`Column ${columnId} not found or inactive`);
     }
 
+    // If column doesn't sync with Gmail, return local tracking
+    if (!columnConfig.hasEmailSync || !columnConfig.gmailLabel) {
+      console.log(
+        `Column "${columnConfig.name}" has no Gmail sync - loading from local tracking`,
+      );
+
+      return this.getLocalColumnData(userId, columnConfig, query);
+    }
+
+    // VALIDATE GMAIL LABEL STILL EXISTS
+    try {
+      const isLabelValid = await this.validateGmailLabel(
+        userId,
+        columnConfig.gmailLabel,
+      );
+
+      if (!isLabelValid) {
+        console.log(
+          `Gmail label "${columnConfig.gmailLabel}" no longer exists - converting column to local-only`,
+        );
+
+        // Auto-convert to local tracking
+        await this.convertColumnToLocalOnly(userId, columnConfig);
+
+        // Return local data with warning
+        const localData = await this.getLocalColumnData(
+          userId,
+          columnConfig,
+          query,
+        );
+        return {
+          ...localData,
+        };
+      }
+    } catch (error) {
+      console.error(
+        `Failed to validate Gmail label for column ${columnId}:`,
+        error,
+      );
+
+      // If Gmail validation fails, fallback to local tracking
+      console.log(
+        `Gmail access issue - falling back to local tracking for column "${columnConfig.name}"`,
+      );
+
+      const localData = await this.getLocalColumnData(
+        userId,
+        columnConfig,
+        query,
+      );
+      return {
+        ...localData,
+      };
+    }
+
     const gmailQuery = this.buildColumnQueryWithFilters(
-      [columnConfig.gmailLabelName],
+      [columnConfig.gmailLabelName!],
       query,
     );
 
@@ -315,6 +849,195 @@ export class KanbanService {
     };
   }
 
+  private async getLocalColumnData(
+    userId: number,
+    columnConfig: KanbanColumnConfig,
+    query: GetColumnQueryDto,
+  ): Promise<KanbanColumnDto> {
+    const limit = query.limit || 20;
+    let offset = 0;
+
+    // Parse pageToken as offset
+    if (query.pageToken) {
+      try {
+        offset = parseInt(query.pageToken);
+      } catch (error) {
+        console.log('🚀 ~ KanbanService ~ getLocalColumnData ~ error:', error);
+        offset = 0;
+      }
+    }
+
+    // Get total count for pagination
+    const totalCount = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.userId = :userId AND order.columnId = :columnId', {
+        userId,
+        columnId: columnConfig.id,
+      })
+      .getCount();
+
+    // Get paginated email IDs with ordering
+    const orderRecords = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.userId = :userId AND order.columnId = :columnId', {
+        userId,
+        columnId: columnConfig.id,
+      })
+      .orderBy('order.order', 'ASC')
+      .addOrderBy('order.createdAt', 'DESC')
+      .limit(limit)
+      .offset(offset)
+      .getMany();
+
+    if (orderRecords.length === 0) {
+      return {
+        id: columnConfig.id,
+        name: columnConfig.name,
+        labelIds: [],
+        count: 0,
+        emails: [],
+        order: columnConfig.order,
+        pagination: {
+          nextPageToken: undefined,
+          estimatedTotal: totalCount,
+          hasMore: false,
+        },
+        canReorder: true,
+        pinnedCount: 0,
+      };
+    }
+
+    const emailIds = orderRecords.map((record) => record.emailId);
+
+    // Fetch email details from Gmail
+    const emailCards = await Promise.all(
+      emailIds.map(async (emailId) => {
+        try {
+          return await this.buildEmailCard(userId, emailId);
+        } catch (error) {
+          console.error(`Failed to build email card for ${emailId}:`, error);
+          return null;
+        }
+      }),
+    );
+
+    // Filter out failed cards
+    const validCards = emailCards.filter(
+      (card): card is EmailCardDto => card !== null,
+    );
+
+    // Get metadata
+    const priorities = await this.getEmailPriorities(userId, emailIds);
+    const summaries = await this.getEmailSummaries(userId, emailIds);
+
+    // Add metadata to cards
+    const cardsWithMetadata = validCards.map((card) => {
+      const priority = priorities.get(card.id);
+      const summary = summaries.get(card.id);
+
+      return {
+        ...card,
+        isPinned: priority?.isPinned ?? false,
+        priorityLevel: priority?.priorityLevel ?? 0,
+        summary: summary?.summary || null,
+        hasSummary: !!summary,
+        summarizedAt: summary?.createdAt?.toISOString() || null,
+      };
+    });
+
+    // Apply local query filters
+    const filteredCards = this.applyLocalQueryFilters(cardsWithMetadata, query);
+
+    // Apply sorting
+    const customOrders = await this.getCustomOrders(
+      userId,
+      columnConfig.id,
+      emailIds,
+    );
+
+    const sortedCards = filteredCards.sort((a, b) => {
+      // Apply sortBy query parameter first
+      if (query?.sortBy === 'oldest') {
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      } else if (query?.sortBy === 'newest') {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      }
+
+      // Then apply custom order
+      const orderA = customOrders.get(a.id);
+      const orderB = customOrders.get(b.id);
+
+      if (orderA !== undefined && orderB !== undefined) {
+        return orderA - orderB;
+      }
+      if (orderA !== undefined) return -1;
+      if (orderB !== undefined) return 1;
+
+      // Default:  newest first
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    // Generate pagination
+    const nextOffset = offset + limit;
+    const hasMore = nextOffset < totalCount;
+    const nextPageToken = hasMore ? nextOffset.toString() : undefined;
+
+    return {
+      id: columnConfig.id,
+      name: columnConfig.name,
+      labelIds: [],
+      count: sortedCards.length,
+      emails: sortedCards,
+      order: columnConfig.order,
+      pagination: {
+        nextPageToken,
+        estimatedTotal: totalCount,
+        hasMore,
+      },
+      canReorder: true,
+      pinnedCount: 0, // Non-synced columns don't support pinning
+    };
+  }
+
+  private applyLocalQueryFilters(
+    cards: EmailCardDto[],
+    query: GetColumnQueryDto,
+  ): EmailCardDto[] {
+    let filtered = [...cards];
+
+    if (query.search) {
+      const searchTerm = query.search.toLowerCase();
+      filtered = filtered.filter(
+        (card) =>
+          card.subject.toLowerCase().includes(searchTerm) ||
+          card.from.toLowerCase().includes(searchTerm) ||
+          card.snippet.toLowerCase().includes(searchTerm),
+      );
+    }
+
+    if (query.from) {
+      filtered = filtered.filter((card) =>
+        card.from.toLowerCase().includes(query.from!.toLowerCase()),
+      );
+    }
+
+    if (query.hasAttachments !== undefined) {
+      filtered = filtered.filter(
+        (card) => card.hasAttachments === query.hasAttachments,
+      );
+    }
+
+    if (query.isUnread !== undefined) {
+      filtered = filtered.filter((card) => card.isUnread === query.isUnread);
+    }
+
+    if (query.isStarred !== undefined) {
+      filtered = filtered.filter((card) => card.isStarred === query.isStarred);
+    }
+
+    return filtered;
+  }
+
   async moveEmailToColumn(
     userId: number,
     emailId: string,
@@ -336,6 +1059,24 @@ export class KanbanService {
       );
     }
 
+    // VALIDATE TARGET COLUMN GMAIL LABEL (if synced)
+    if (targetColumn.hasEmailSync && targetColumn.gmailLabel) {
+      const isTargetLabelValid = await this.validateGmailLabel(
+        userId,
+        targetColumn.gmailLabel,
+      );
+
+      if (!isTargetLabelValid) {
+        console.log(
+          `Target column Gmail label deleted - converting to local-only`,
+        );
+        await this.convertColumnToLocalOnly(userId, targetColumn);
+
+        // Continue with local-only move
+        return this.moveEmailToLocalColumn(userId, emailId, moveDto);
+      }
+    }
+
     let sourceColumn: KanbanColumnConfig | null = null;
     if (moveDto.sourceColumn) {
       sourceColumn = await this.columnConfigRepository.findOne({
@@ -344,17 +1085,77 @@ export class KanbanService {
     }
 
     // Update Gmail labels
-    const labelsToAdd = [targetColumn.gmailLabel];
-    const labelsToRemove = sourceColumn ? [sourceColumn.gmailLabel] : [];
+    // const labelsToAdd = [targetColumn.gmailLabel];
+    // const labelsToRemove = sourceColumn ? [sourceColumn.gmailLabel] : [];
 
-    try {
-      await this.gmailService.modifyMessage(userId, emailId, {
-        addLabelIds: labelsToAdd,
-        removeLabelIds: labelsToRemove,
-      });
-    } catch (error) {
-      console.error('Failed to update Gmail labels:', error);
-      throw new BadRequestException('Failed to move email in Gmail');
+    // Determine Gmail label operations based on column sync status
+    const labelsToAdd: string[] = [];
+    const labelsToRemove: string[] = [];
+
+    if (targetColumn.hasEmailSync && targetColumn.gmailLabel) {
+      // Target column has Gmail sync - add its label
+      labelsToAdd.push(targetColumn.gmailLabel);
+      console.log(
+        `Target column "${targetColumn.name}" synced - will add label: ${targetColumn.gmailLabel}`,
+      );
+    } else {
+      console.log(
+        `Target column "${targetColumn.name}" not synced - no labels to add`,
+      );
+    }
+
+    if (sourceColumn) {
+      if (sourceColumn.hasEmailSync && sourceColumn.gmailLabel) {
+        // Source column has Gmail sync - remove its label
+        labelsToRemove.push(sourceColumn.gmailLabel);
+        console.log(
+          `Source column "${sourceColumn.name}" synced - will remove label: ${sourceColumn.gmailLabel}`,
+        );
+      } else {
+        console.log(
+          `Source column "${sourceColumn.name}" not synced - no labels to remove`,
+        );
+      }
+    } else {
+      // No source column specified - try to detect from email labels
+      console.log(`No source column specified - detecting from email labels`);
+      const detectedSource = await this.detectCurrentColumnFromEmail(
+        userId,
+        emailId,
+      );
+
+      if (
+        detectedSource &&
+        detectedSource.hasEmailSync &&
+        detectedSource.gmailLabel
+      ) {
+        labelsToRemove.push(detectedSource.gmailLabel);
+        console.log(
+          `Detected source column "${detectedSource.name}" - will remove label: ${detectedSource.gmailLabel}`,
+        );
+      }
+    }
+
+    // Apply Gmail label changes (only if needed)
+    if (labelsToAdd.length > 0 || labelsToRemove.length > 0) {
+      try {
+        await this.gmailService.modifyMessage(userId, emailId, {
+          addLabelIds: labelsToAdd,
+          removeLabelIds: labelsToRemove,
+        });
+
+        console.log(`Gmail labels updated: `, {
+          added: labelsToAdd,
+          removed: labelsToRemove,
+        });
+      } catch (error) {
+        console.error('Failed to update Gmail labels:', error);
+        throw new BadRequestException('Failed to update email labels in Gmail');
+      }
+    } else {
+      console.log(
+        `No Gmail label changes needed - both columns are non-synced or same sync status`,
+      );
     }
 
     await this.orderRepository.delete({
@@ -402,6 +1203,36 @@ export class KanbanService {
       sourceColumn: moveDto.sourceColumn,
       targetColumn: moveDto.targetColumn,
       message: `Email moved from "${moveDto.sourceColumn}" to "${moveDto.targetColumn}"`,
+    };
+  }
+
+  private async moveEmailToLocalColumn(
+    userId: number,
+    emailId: string,
+    moveDto: MoveEmailDto,
+  ): Promise<MoveEmailResponseDto> {
+    console.log(
+      `Moving email ${emailId} to local-only column ${moveDto.targetColumn}`,
+    );
+
+    // Clean up old order records
+    await this.orderRepository.delete({ userId, emailId });
+
+    // Create new order record
+    const targetOrder = moveDto.targetPosition ?? 0;
+    await this.orderRepository.save({
+      userId,
+      emailId,
+      columnId: moveDto.targetColumn,
+      order: targetOrder,
+    });
+
+    return {
+      success: true,
+      emailId: emailId,
+      sourceColumn: moveDto.sourceColumn,
+      targetColumn: moveDto.targetColumn,
+      message: 'Email moved to local-only column',
     };
   }
 
@@ -1049,12 +1880,30 @@ export class KanbanService {
     userId: number,
     emailId: string,
   ): Promise<KanbanColumnConfig | null> {
-    // Get email details from Gmail
-    const message = await this.gmailService.getMessage(userId, emailId);
-    const labelIds = message.labelIds || [];
+    try {
+      // Get email details from Gmail
+      const message = await this.gmailService.getMessage(userId, emailId);
+      const labelIds = message.labelIds || [];
 
-    // Find matching column
-    return this.detectColumnFromLabels(labelIds, userId);
+      if (labelIds.length === 0) {
+        return null;
+      }
+
+      // Find column that matches any of the email's labels
+      const matchingColumn = await this.columnConfigRepository.findOne({
+        where: {
+          userId,
+          gmailLabel: In(labelIds),
+          isActive: true,
+          hasEmailSync: true,
+        },
+      });
+
+      return matchingColumn;
+    } catch (error) {
+      console.error('Failed to detect current column from email:', error);
+      return null;
+    }
   }
 
   private async shiftPinnedPositions(
