@@ -203,6 +203,8 @@ export class SnoozeService {
       columnId: snooze.originalColumn,
       order: newOrder,
     });
+
+    await this.snoozeRepository.delete(snooze.id);
   }
 
   async restoreDueSnoozes(): Promise<number> {

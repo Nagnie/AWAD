@@ -46,7 +46,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
         ssl: configService.get<boolean>('database.ssl'),
         channelBinding: configService.get<string>('database.channelBinding'),
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: false,
         logging: ['error'],
       }),
     }),

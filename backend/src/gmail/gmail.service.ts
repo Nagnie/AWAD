@@ -81,12 +81,17 @@ export class GmailService {
     return res.data;
   }
 
-  async listMessages(userId: number, query?: string, pageToken?: string) {
+  async listMessages(
+    userId: number,
+    query?: string,
+    pageToken?: string,
+    maxResults?: number,
+  ) {
     const gmail = await this.getAuthenticatedGmailClient(userId);
     const res = await gmail.users.messages.list({
       userId: 'me',
       q: query,
-      maxResults: 20,
+      maxResults: maxResults ?? 20,
       pageToken: pageToken,
     });
     return res.data;
@@ -424,6 +429,20 @@ export class GmailService {
     }
 
     return labelIds;
+  }
+
+  async labelExists(userId: number, labelName: string): Promise<boolean> {
+    const labelId = await this.getLabelIdByName(userId, labelName);
+    return !!labelId;
+  }
+
+  async getOrCreateLabel(userId: number, labelName: string) {
+    const labelId = await this.getLabelIdByName(userId, labelName);
+    if (labelId) {
+      return labelId;
+    }
+    const newLabel = await this.createLabel(userId, labelName);
+    return newLabel.id;
   }
 
   private isSystemLabel(labelName: string): boolean {
