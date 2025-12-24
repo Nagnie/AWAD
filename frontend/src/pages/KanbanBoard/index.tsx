@@ -52,6 +52,8 @@ import type { EmailCardDto, KanbanColumnId, SnoozeResponseDto } from "@/services
 import { FuzzySearchBar } from "@/components/FuzzySearchBar";
 import { useNavigate } from "react-router-dom";
 import KanbanColumn from "@/components/KanbanColumn";
+import { useAppSelector } from "@/hooks/redux";
+import { useSnoozeSocket } from "@/hooks/useSnoozeSocket";
 
 export type ColumnSettings = {
     sortBy: "date-desc" | "date-asc" | "sender";
@@ -109,6 +111,33 @@ const getColumnIcon = (columnName: string) => {
 const KanbanBoard = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const { user } = useAppSelector((state) => state.auth);
+
+    const { isConnected } = useSnoozeSocket({
+        userEmail: user?.email || "",
+        onEmailRestored: (event) => {
+            console.log("📬 Email restored:", event);
+
+            setProcessedEmailIds((prev) => {
+                const next = new Set(prev);
+                next.delete(event.emailId);
+                return next;
+            });
+
+            // Refresh only the affected column
+            // refreshColumn(event.columnId);
+            queryClient.invalidateQueries({ queryKey: kanbanKeys.column(+event.columnId) });
+            queryClient.invalidateQueries({ queryKey: kanbanKeys.snoozed() });
+        },
+        onConnected: () => {
+            console.log("🟢 Snooze socket connected");
+        },
+        onDisconnected: () => {
+            console.log("⚠️ Snooze socket disconnected, reconnecting...");
+        },
+        enabled: !!user?.email,
+    });
+    console.log("🚀 ~ KanbanBoard ~ isConnected:", isConnected);
 
     // Fetch columns configuration
     const { data: columnsConfig, isLoading: isLoadingColumns } = useKanbanColumnsMeta();
