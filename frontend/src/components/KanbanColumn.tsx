@@ -132,6 +132,10 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                             }
                         </Badge>
                     )}
+
+                    {isFetching && !isLoading && (
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    )}
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -192,7 +196,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             {/* Droppable Area */}
             <DroppableColumn id={column.id.toString()}>
                 <div className="space-y-3 min-h-[200px]">
-                    {isLoading || isFetching ? (
+                    {isLoading ? (
                         <div className="flex justify-center py-12">
                             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                         </div>
