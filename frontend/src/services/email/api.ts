@@ -7,6 +7,7 @@ import type {
     BatchOperationResponse,
     EmailSearchDto,
     EmailSearchResult,
+    EmailSearchCard,
 } from "./types";
 import type { EmailMessage } from "@/services/mailboxes/types";
 
@@ -154,4 +155,25 @@ export const searchEmails = async (data: EmailSearchDto) => {
     );
 
     return response.data.data || { data: [], page: 1, limit: 0, totalResult: 0 };
+};
+
+export const semanticSearchEmails = async (data: EmailSearchDto) => {
+    const client = apiClient.getClient();
+
+    const response = await client.post<ApiResponse<EmailSearchCard[]>>(
+        `/api/v1/email/search/semantic`,
+        data
+    );
+
+    const array = response.data.data || [];
+    const totalResult = array.length;
+
+    return {
+        data: array,
+        page: 1,
+        limit: totalResult,
+        totalResult: totalResult,
+    };
+
+    // return response.data.data || { data: [], page: 1, limit: 0, totalResult: 0 };
 };

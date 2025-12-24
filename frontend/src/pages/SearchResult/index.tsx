@@ -12,7 +12,12 @@ import { useMailboxes } from "@/hooks/useMailboxes";
 import { formatMailboxName } from "@/lib/utils";
 import { type Folder } from "@/services/mail";
 import type { EmailSearchCard } from "@/services/email/types";
-import { flattenSearchResults, useInfiniteEmailSearch } from "@/hooks/useEmails";
+import {
+    flattenSearchResults,
+    useInfiniteEmailSearch,
+    useInfiniteEmailSemanticSearch,
+} from "@/hooks/useEmails";
+import { SemanticSearchBar } from "@/components/SemanticSearchBar";
 
 const mailboxIcons: Record<string, React.ReactNode> = {
     inbox: <Mail className="w-4 h-4" />,
@@ -28,21 +33,24 @@ export default function SearchResultsPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const queryFromUrl = searchParams.get("q") || "";
     const fromFromUrl = searchParams.get("from") || "";
+    const searchMode = searchParams.get("mode") || "fuzzy";
 
     const { mailboxes, isLoading: isLoadingMailboxes } = useMailboxes();
     const [folders, setFolders] = useState<Folder[]>([]);
 
     const debouncedQuery = useDebounce(queryFromUrl, 300);
 
-    // Use infinite query hook
-    const {
-        data,
-        isLoading: isSearching,
-        isFetching,
-        hasNextPage,
-        fetchNextPage,
-        isFetchingNextPage,
-    } = useInfiniteEmailSearch(debouncedQuery);
+    // Determine which mode is active
+    const isSemanticMode = searchMode === "semantic";
+
+    // Use infinite query hooks - only enable the appropriate one
+    const fuzzyQuery = useInfiniteEmailSearch(debouncedQuery, !isSemanticMode);
+    const semanticQuery = useInfiniteEmailSemanticSearch(debouncedQuery, isSemanticMode);
+
+    // Get data from the active query
+    const activeQuery = isSemanticMode ? semanticQuery : fuzzyQuery;
+    const { data, isLoading, isFetching, hasNextPage, fetchNextPage, isFetchingNextPage } =
+        activeQuery;
 
     // Flatten all pages into single array
     const results = flattenSearchResults(data);
@@ -50,7 +58,7 @@ export default function SearchResultsPage() {
 
     // Infinite scroll sentinel
     const sentinelRef = useInfiniteScroll({
-        hasMore: hasNextPage || false,
+        hasMore: hasNextPage,
         isLoading: isFetchingNextPage,
         onLoadMore: fetchNextPage,
     });
@@ -78,18 +86,29 @@ export default function SearchResultsPage() {
 
     // Handler when clicking email from dropdown preview
     const handleEmailSelectFromDropdown = (emailId: string) => {
-        navigate(`/email/${emailId}?from=search&q=${encodeURIComponent(queryFromUrl)}`);
+        navigate(
+            `/email/${emailId}?from=search&q=${encodeURIComponent(queryFromUrl)}${
+                isSemanticMode ? "&mode=semantic" : ""
+            }`
+        );
     };
 
     // Handler when "View All" or Enter pressed in search bar
     const handleViewAllFromSearch = (query: string) => {
         if (query.trim()) {
-            setSearchParams({ q: query.trim() });
+            setSearchParams({
+                q: query.trim(),
+                ...(isSemanticMode && { mode: "semantic" }),
+            });
         }
     };
 
     const handleEmailClick = (email: EmailSearchCard) => {
-        navigate(`/email/${email.id}?from=search&q=${encodeURIComponent(queryFromUrl)}`);
+        navigate(
+            `/email/${email.id}?from=search&q=${encodeURIComponent(queryFromUrl)}${
+                isSemanticMode ? "&mode=semantic" : ""
+            }`
+        );
     };
 
     const handleFolderClick = (folderId: string) => {
@@ -105,7 +124,7 @@ export default function SearchResultsPage() {
     };
 
     // Show initial loading overlay
-    const showLoadingOverlay = isSearching && results.length === 0;
+    const showLoadingOverlay = isLoading && results.length === 0;
 
     return (
         <div className="h-[calc(100vh-64px)] flex">
@@ -161,7 +180,14 @@ export default function SearchResultsPage() {
                 {/* Header */}
                 <div className="p-4 border-b shrink-0 space-y-3">
                     <div className="flex items-center justify-between gap-3">
-                        <h1 className="text-xl font-semibold">Search Results</h1>
+                        <h1 className="text-xl font-semibold">
+                            Search Results{" "}
+                            {isSemanticMode && (
+                                <Badge variant="outline" className="ml-2">
+                                    Semantic
+                                </Badge>
+                            )}
+                        </h1>
                         <Button
                             variant="ghost"
                             size="sm"
@@ -173,12 +199,20 @@ export default function SearchResultsPage() {
                         </Button>
                     </div>
 
-                    {/* Fuzzy Search Bar */}
-                    <FuzzySearchBar
-                        onEmailSelect={handleEmailSelectFromDropdown}
-                        onViewAll={handleViewAllFromSearch}
-                        initialQuery={queryFromUrl}
-                    />
+                    {/* Search Bar - dynamically render based on mode */}
+                    {isSemanticMode ? (
+                        <SemanticSearchBar
+                            onEmailSelect={handleEmailSelectFromDropdown}
+                            onViewAll={handleViewAllFromSearch}
+                            initialQuery={queryFromUrl}
+                        />
+                    ) : (
+                        <FuzzySearchBar
+                            onEmailSelect={handleEmailSelectFromDropdown}
+                            onViewAll={handleViewAllFromSearch}
+                            initialQuery={queryFromUrl}
+                        />
+                    )}
 
                     {/* Results info */}
                     {queryFromUrl && (
@@ -188,7 +222,7 @@ export default function SearchResultsPage() {
                                     Results for: <strong>"{queryFromUrl}"</strong>
                                 </span>
                             </div>
-                            {!isSearching && results.length > 0 && (
+                            {!isLoading && results.length > 0 && (
                                 <Badge variant="secondary" className="ml-3">
                                     {totalResults} {totalResults === 1 ? "result" : "results"}
                                 </Badge>
@@ -258,6 +292,15 @@ export default function SearchResultsPage() {
                                                             % match
                                                         </Badge>
                                                     )}
+                                                {email.similarity && email.similarity > 0 && (
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="h-5 text-xs"
+                                                    >
+                                                        {Math.round(email.similarity * 100)}%
+                                                        similar
+                                                    </Badge>
+                                                )}
                                             </div>
                                             <h3 className="font-semibold mb-1 truncate">
                                                 {email.subject}
@@ -271,7 +314,9 @@ export default function SearchResultsPage() {
                                                 </p>
                                             )}
                                             <p className="text-xs text-muted-foreground mt-2">
-                                                {new Date(+email.internalDate).toLocaleString()}
+                                                {new Date(
+                                                    +email.internalDate || +email.internal_date
+                                                ).toLocaleString()}
                                             </p>
                                         </div>
                                         <Button
